@@ -1,0 +1,61 @@
+import { DataTypes } from 'sequelize';
+import db from '../../config/database.js';
+import crypto from 'crypto';
+
+const PasswordResetToken = db.define('PasswordResetToken', {
+	id: {
+		type: DataTypes.UUID,
+		defaultValue: DataTypes.UUIDV4,
+		primaryKey: true,
+	},
+	userId: {
+		type: DataTypes.UUID,
+		allowNull: false,
+		field: 'user_id',
+		references: {
+			model: 'users',
+			key: 'id',
+		},
+	},
+	token: {
+		type: DataTypes.STRING,
+		allowNull: false,
+		unique: true,
+	},
+	expiresAt: {
+		type: DataTypes.DATE,
+		allowNull: false,
+		field: 'expires_at',
+	},
+	used: {
+		type: DataTypes.BOOLEAN,
+		defaultValue: false,
+	},
+});
+
+// Método estático para generar token
+PasswordResetToken.generateToken = function() {
+	return crypto.randomBytes(32).toString('hex');
+};
+
+// Método estático para crear token con expiración
+PasswordResetToken.createForUser = async function(userId) {
+	// Invalidar tokens anteriores
+	await PasswordResetToken.update(
+		{ used: true },
+		{ where: { userId, used: false } }
+	);
+
+	const token = this.generateToken();
+	const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+	const resetToken = await PasswordResetToken.create({
+		userId,
+		token,
+		expiresAt,
+	});
+
+	return resetToken;
+};
+
+export default PasswordResetToken;

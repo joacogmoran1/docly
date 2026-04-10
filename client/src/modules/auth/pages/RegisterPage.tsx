@@ -2,22 +2,26 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { registerSchema } from "@/modules/auth/schemas/login.schema";
 import type { RegisterFormValues } from "@/modules/auth/types/auth-forms";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 
-const steps = ["Cuenta", "Datos", "Seguridad", "Confirmar"];
+const steps = ["Cuenta", "Datos", "Seguridad"];
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const { register: registerUser } = useAuth();
   const [step, setStep] = useState(0);
+  const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
+    handleSubmit,
     watch,
     trigger,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
@@ -25,7 +29,6 @@ export function RegisterPage() {
       fullName: "",
       email: "",
       phone: "",
-      document: "",
       specialty: "",
       license: "",
       password: "",
@@ -40,18 +43,36 @@ export function RegisterPage() {
     if (step === 0) return ["role", "fullName", "email"] as const;
     if (step === 1) {
       return role === "professional"
-        ? (["phone", "document", "specialty", "license"] as const)
-        : (["phone", "document"] as const);
+        ? (["phone", "specialty", "license"] as const)
+        : (["phone"] as const);
     }
-    if (step === 2) return ["password", "confirmPassword", "acceptedTerms"] as const;
-    return [] as const;
+    return ["password", "confirmPassword", "acceptedTerms"] as const;
   }, [role, step]);
+
+  const submitRegistration = handleSubmit(async (values) => {
+    try {
+      setServerError(null);
+      const user = await registerUser(values);
+      navigate(user.role === "patient" ? "/patient" : "/professional", {
+        replace: true,
+      });
+    } catch (error) {
+      setServerError(error instanceof Error ? error.message : "No se pudo crear la cuenta.");
+    }
+  });
 
   const goNext = async () => {
     const valid = await trigger(currentFields);
-    if (valid) {
-      setStep((current) => Math.min(current + 1, steps.length - 1));
+    if (!valid) return;
+
+    setServerError(null);
+
+    if (step === steps.length - 1) {
+      await submitRegistration();
+      return;
     }
+
+    setStep((current) => current + 1);
   };
 
   return (
@@ -107,12 +128,6 @@ export function RegisterPage() {
               error={errors.phone?.message}
               {...register("phone")}
             />
-            <Input
-              label="Documento"
-              placeholder="DNI / documento"
-              error={errors.document?.message}
-              {...register("document")}
-            />
             {role === "professional" ? (
               <>
                 <Input
@@ -156,29 +171,23 @@ export function RegisterPage() {
           </>
         ) : null}
 
-        {step === 3 ? (
-          <div className="auth-confirmation-minimal">
-            <strong className="title-md">Cuenta creada</strong>
-            <p className="meta">Ya podes iniciar sesion cuando quieras.</p>
-            <Button type="button" fullWidth onClick={() => navigate("/auth/login")}>
-              Ir al login
-            </Button>
-          </div>
-        ) : null}
+        {serverError ? <span className="field-error">{serverError}</span> : null}
 
-        {step < 3 ? (
-          <div className="form-actions auth-form-actions">
-            {step > 0 ? (
-              <Button type="button" variant="ghost" onClick={() => setStep((current) => current - 1)}>
-                Volver
-              </Button>
-            ) : null}
-
-            <Button type="button" onClick={goNext}>
-              Continuar
+        <div className="form-actions auth-form-actions">
+          {step > 0 ? (
+            <Button type="button" variant="ghost" onClick={() => setStep((current) => current - 1)}>
+              Volver
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+
+          <Button type="button" onClick={goNext} disabled={isSubmitting}>
+            {step === steps.length - 1
+              ? isSubmitting
+                ? "Creando cuenta..."
+                : "Crear cuenta"
+              : "Continuar"}
+          </Button>
+        </div>
       </form>
     </div>
   );

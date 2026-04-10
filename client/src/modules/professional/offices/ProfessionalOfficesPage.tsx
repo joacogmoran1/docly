@@ -1,17 +1,21 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getProfessionalOfficesMock } from "@/mocks/docly-api";
+import { getProfessionalOffices } from "@/modules/professional/api/professional.api";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { ListEntry } from "@/shared/components/ListEntry";
 import { SearchBar } from "@/shared/components/SearchBar";
 import { Button } from "@/shared/ui/Button";
 
 export function ProfessionalOfficesPage() {
+  const { user } = useAuth();
+  const professionalId = user?.professionalId ?? "";
   const [search, setSearch] = useState("");
   const query = useQuery({
-    queryKey: queryKeys.professionalOffices,
-    queryFn: getProfessionalOfficesMock,
+    queryKey: [...queryKeys.professionalOffices, professionalId],
+    queryFn: () => getProfessionalOffices(professionalId),
+    enabled: Boolean(professionalId),
   });
 
   const rows = useMemo(() => {
@@ -47,7 +51,7 @@ export function ProfessionalOfficesPage() {
               </Link>
             }
           >
-              <span className="slot-entry-meta">{office.address}</span>
+            <span className="slot-entry-meta">{office.address}</span>
           </ListEntry>
         ))}
 

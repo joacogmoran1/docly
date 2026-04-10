@@ -26,6 +26,11 @@ export interface SessionUser {
   subtitle: string;
   avatar: string;
   permissions: Permission[];
+  patientId?: string;
+  professionalId?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
 }
 
 export interface AuthTokens {

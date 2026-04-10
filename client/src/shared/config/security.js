@@ -17,7 +17,7 @@ export var CONTENT_SECURITY_POLICY = [
     "style-src 'self'",
     "style-src-elem 'self'",
     "style-src-attr 'none'",
-    "connect-src 'self'",
+    "connect-src 'self' ws: wss:",
     "manifest-src 'self'",
     "worker-src 'self' blob:",
     "media-src 'self'",

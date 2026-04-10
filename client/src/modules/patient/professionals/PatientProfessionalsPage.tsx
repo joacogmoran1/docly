@@ -1,7 +1,13 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getPatientProfessionalsMock } from "@/mocks/docly-api";
+import {
+  addProfessionalToTeam,
+  getPatientTeamProfessionals,
+  removeProfessionalFromTeam,
+  searchProfessionals,
+} from "@/modules/patient/api/patient.api";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { ListEntry } from "@/shared/components/ListEntry";
 import { SearchBar } from "@/shared/components/SearchBar";
@@ -9,59 +15,103 @@ import { Select } from "@/shared/ui/Select";
 import { Button } from "@/shared/ui/Button";
 
 export function PatientProfessionalsPage() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const patientId = user?.patientId ?? "";
   const [tab, setTab] = useState("team");
   const [search, setSearch] = useState("");
-  const [specialty, setSpecialty] = useState("all");
-  const [zone, setZone] = useState("all");
-  const [teamOverrides, setTeamOverrides] = useState<Record<string, boolean>>({});
-  const query = useQuery({
-    queryKey: queryKeys.patientProfessionals,
-    queryFn: getPatientProfessionalsMock,
+  const [specialty, setSpecialty] = useState("");
+  const [coverage, setCoverage] = useState("");
+  const teamQuery = useQuery({
+    queryKey: [...queryKeys.patientProfessionals, patientId],
+    queryFn: () => getPatientTeamProfessionals(patientId),
+    enabled: Boolean(patientId),
+  });
+  const discoverQuery = useQuery({
+    queryKey: [...queryKeys.patientProfessionalSearch, search, specialty, coverage],
+    queryFn: () =>
+      searchProfessionals({
+        query: search,
+        specialty,
+        coverage,
+      }),
+    enabled: tab === "discover",
+  });
+  const toggleTeamMutation = useMutation({
+    mutationFn: async ({
+      professionalId,
+      isInTeam,
+    }: {
+      professionalId: string;
+      isInTeam: boolean;
+    }) => {
+      if (isInTeam) {
+        await removeProfessionalFromTeam(patientId, professionalId);
+        return;
+      }
+
+      await addProfessionalToTeam(patientId, professionalId);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.patientProfessionals, patientId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.patientProfessionalSearch,
+        }),
+      ]);
+    },
   });
 
-  const professionals = useMemo(
-    () =>
-      (query.data ?? []).map((professional) => ({
-        ...professional,
-        isInTeam: teamOverrides[professional.id] ?? professional.isInTeam,
-      })),
-    [query.data, teamOverrides],
+  const teamProfessionals = teamQuery.data ?? [];
+  const discoveredProfessionals = discoverQuery.data ?? [];
+  const teamIds = new Set(teamProfessionals.map((professional) => professional.id));
+  const professionals = (tab === "team" ? teamProfessionals : discoveredProfessionals).map(
+    (professional) => ({
+      ...professional,
+      isInTeam: teamIds.has(professional.id),
+    }),
   );
 
   const specialtyOptions = useMemo(() => {
-    const values = Array.from(new Set(professionals.map((item) => item.specialty)));
-    return [{ value: "all", label: "Todas las especializaciones" }, ...values.map((value) => ({ value, label: value }))];
+    const values = Array.from(new Set(professionals.map((item) => item.specialty))).sort();
+    return [
+      { value: "", label: "Todas las especialidades" },
+      ...values.map((value) => ({ value, label: value })),
+    ];
   }, [professionals]);
 
-  const zoneOptions = useMemo(() => {
-    const values = Array.from(
-      new Set(professionals.map((item) => item.location.split(",")[0]?.trim() ?? item.location)),
-    );
-    return [{ value: "all", label: "Todas las zonas" }, ...values.map((value) => ({ value, label: value }))];
+  const coverageOptions = useMemo(() => {
+    const values = Array.from(new Set(professionals.flatMap((item) => item.coverage))).sort();
+    return [
+      { value: "", label: "Todas las coberturas" },
+      ...values.map((value) => ({ value, label: value })),
+    ];
   }, [professionals]);
 
-  const filteredRows = useMemo(() => {
-    const items = professionals.filter((professional) => {
-      const zoneValue = professional.location.split(",")[0]?.trim() ?? professional.location;
-      const matchesSearch =
-        professional.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        professional.specialty.toLowerCase().includes(search.toLowerCase());
-      const matchesSpecialty = specialty === "all" || professional.specialty === specialty;
-      const matchesZone = zone === "all" || zoneValue === zone;
-      const matchesTab = tab === "team" ? professional.isInTeam : true;
+  const filteredRows = useMemo(
+    () =>
+      professionals.filter((professional) => {
+        const normalizedSearch = search.toLowerCase();
+        const matchesSearch =
+          !search ||
+          professional.fullName.toLowerCase().includes(normalizedSearch) ||
+          professional.specialty.toLowerCase().includes(normalizedSearch);
+        const matchesSpecialty = !specialty || professional.specialty === specialty;
+        const matchesCoverage = !coverage || professional.coverage.includes(coverage);
 
-      return matchesSearch && matchesSpecialty && matchesZone && matchesTab;
-    });
+        return matchesSearch && matchesSpecialty && matchesCoverage;
+      }),
+    [coverage, professionals, search, specialty],
+  );
 
-    if (tab === "discover") {
-      return items.sort((a, b) => Number(b.isInTeam) - Number(a.isInTeam));
-    }
-
-    return items;
-  }, [professionals, search, specialty, tab, zone]);
-
-  if (query.isLoading) return <div className="centered-feedback">Cargando profesionales...</div>;
-  if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar profesionales.</div>;
+  if (teamQuery.isLoading || (tab === "discover" && discoverQuery.isLoading)) {
+    return <div className="centered-feedback">Cargando profesionales...</div>;
+  }
+  if (teamQuery.isError || discoverQuery.isError) {
+    return <div className="centered-feedback">No pudimos cargar profesionales.</div>;
+  }
 
   return (
     <div className="page-stack">
@@ -88,7 +138,7 @@ export function PatientProfessionalsPage() {
       <div className="filters-inline">
         <SearchBar placeholder="Buscar por nombre o especialidad" value={search} onChange={setSearch} />
         <Select options={specialtyOptions} value={specialty} onChange={(event) => setSpecialty(event.target.value)} />
-        <Select options={zoneOptions} value={zone} onChange={(event) => setZone(event.target.value)} />
+        <Select options={coverageOptions} value={coverage} onChange={(event) => setCoverage(event.target.value)} />
       </div>
 
       <div className="dashboard-plain-list">
@@ -101,11 +151,12 @@ export function PatientProfessionalsPage() {
                 <Button
                   variant="ghost"
                   className="button-inline"
+                  disabled={toggleTeamMutation.isPending}
                   onClick={() =>
-                    setTeamOverrides((current) => ({
-                      ...current,
-                      [professional.id]: !professional.isInTeam,
-                    }))
+                    toggleTeamMutation.mutate({
+                      professionalId: professional.id,
+                      isInTeam: professional.isInTeam,
+                    })
                   }
                 >
                   {professional.isInTeam ? "Quitar" : "Agregar"}
@@ -116,8 +167,8 @@ export function PatientProfessionalsPage() {
               </>
             }
           >
-              <span className="slot-entry-meta">{professional.specialty}</span>
-              <span className="slot-entry-meta">{professional.location}</span>
+            <span className="slot-entry-meta">{professional.specialty}</span>
+            <span className="slot-entry-meta">{professional.location}</span>
           </ListEntry>
         ))}
 

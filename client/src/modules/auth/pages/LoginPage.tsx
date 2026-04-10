@@ -7,13 +7,6 @@ import { loginSchema } from "@/modules/auth/schemas/login.schema";
 import type { LoginFormValues } from "@/modules/auth/types/auth-forms";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
-import { Select } from "@/shared/ui/Select";
-
-const roleOptions = [
-  { value: "", label: "Deteccion automatica" },
-  { value: "patient", label: "Paciente" },
-  { value: "professional", label: "Profesional" },
-];
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -26,9 +19,8 @@ export function LoginPage() {
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "sofia@docly.app",
-      password: "docly123",
-      role: "patient",
+      email: "",
+      password: "",
     },
   });
 
@@ -68,23 +60,15 @@ export function LoginPage() {
           error={errors.password?.message}
           {...register("password")}
         />
-        <Select
-          label="Acceso por rol"
-          options={roleOptions}
-          error={errors.role?.message}
-          {...register("role")}
-        />
         {serverError ? <span className="field-error">{serverError}</span> : null}
         <Button type="submit" fullWidth disabled={isSubmitting}>
           {isSubmitting ? "Ingresando..." : "Ingresar"}
         </Button>
       </form>
 
-      <div className="auth-card-links">
-        <Link to="/auth/forgot-password" className="helper-text">
-          Recuperar contrasena
-        </Link>
-      </div>
+      <Link to="/auth/forgot-password" className="helper-text">
+        Olvide mi contrasena
+      </Link>
     </div>
   );
 }

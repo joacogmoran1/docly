@@ -1,66 +1,87 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getProfessionalProfileMock } from "@/mocks/docly-api";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  getProfessionalProfile,
+  updateProfessionalProfile,
+} from "@/modules/professional/api/professional.api";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { queryKeys } from "@/shared/constants/query-keys";
-import { validatePdfUpload } from "@/shared/utils/file-security";
 import { Card } from "@/shared/ui/Card";
 import { Input } from "@/shared/ui/Input";
-import { Select } from "@/shared/ui/Select";
 import { Button } from "@/shared/ui/Button";
+import type { ProfessionalProfileView } from "@/services/api/mappers";
 
-const professionOptions = [
-  { value: "medico", label: "Medico" },
-  { value: "kinesiologo", label: "Kinesiologo" },
-  { value: "nutricionista", label: "Nutricionista" },
-  { value: "psicologo", label: "Psicologo" },
-  { value: "other", label: "Otro" },
-];
-
-const specializationMap: Record<string, { value: string; label: string }[]> = {
-  medico: [
-    { value: "clinica medica", label: "Clinica medica" },
-    { value: "cardiologia", label: "Cardiologia" },
-    { value: "traumatologia", label: "Traumatologia" },
-    { value: "other", label: "Otra" },
-  ],
-  kinesiologo: [
-    { value: "deportiva", label: "Deportiva" },
-    { value: "neurologica", label: "Neurologica" },
-    { value: "respiratoria", label: "Respiratoria" },
-    { value: "other", label: "Otra" },
-  ],
-  nutricionista: [
-    { value: "clinica", label: "Clinica" },
-    { value: "deportiva", label: "Deportiva" },
-    { value: "other", label: "Otra" },
-  ],
-  psicologo: [
-    { value: "clinica", label: "Clinica" },
-    { value: "infanto juvenil", label: "Infanto juvenil" },
-    { value: "other", label: "Otra" },
-  ],
-  other: [{ value: "other", label: "Otra" }],
-};
+interface ProfessionalProfileForm extends ProfessionalProfileView {
+  acceptedCoveragesText: string;
+}
 
 export function ProfessionalProfilePage() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const professionalId = user?.professionalId ?? "";
   const [editingPersonal, setEditingPersonal] = useState(false);
   const [editingProfessional, setEditingProfessional] = useState(false);
-  const [profession, setProfession] = useState("medico");
-  const [specialization, setSpecialization] = useState("clinica medica");
-  const [signatureError, setSignatureError] = useState<string | null>(null);
-  const [signatureLabel, setSignatureLabel] = useState<string>("");
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [form, setForm] = useState<ProfessionalProfileForm | null>(null);
   const query = useQuery({
-    queryKey: queryKeys.professionalProfile,
-    queryFn: getProfessionalProfileMock,
+    queryKey: [...queryKeys.professionalProfile, professionalId],
+    queryFn: () => getProfessionalProfile(professionalId),
+    enabled: Boolean(professionalId),
+  });
+  const updateMutation = useMutation({
+    mutationFn: (section: "personal" | "professional") => {
+      if (!form) {
+        throw new Error("No hay datos para guardar.");
+      }
+
+      if (section === "personal") {
+        return updateProfessionalProfile(professionalId, {
+          name: form.name || undefined,
+          lastName: form.lastName || undefined,
+          phone: form.phone || undefined,
+        });
+      }
+
+      return updateProfessionalProfile(professionalId, {
+        specialty: form.specialty || undefined,
+        licenseNumber: form.licenseNumber || undefined,
+        acceptedCoverages: form.acceptedCoveragesText
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+        fees: form.fees ? Number(form.fees) : undefined,
+      });
+    },
+    onSuccess: async (nextProfile) => {
+      setForm({
+        ...nextProfile,
+        acceptedCoveragesText: nextProfile.acceptedCoverages.join(", "),
+      });
+      setEditingPersonal(false);
+      setEditingProfessional(false);
+      setServerError(null);
+      await queryClient.invalidateQueries({
+        queryKey: [...queryKeys.professionalProfile, professionalId],
+      });
+    },
+    onError: (error) => {
+      setServerError(
+        error instanceof Error ? error.message : "No se pudo guardar el perfil profesional.",
+      );
+    },
   });
 
-  const specializationOptions = useMemo(
-    () => specializationMap[profession] ?? specializationMap.other,
-    [profession],
-  );
+  useEffect(() => {
+    if (query.data) {
+      setForm({
+        ...query.data,
+        acceptedCoveragesText: query.data.acceptedCoverages.join(", "),
+      });
+    }
+  }, [query.data]);
 
-  if (query.isLoading) return <div className="centered-feedback">Cargando perfil...</div>;
-  if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar el perfil.</div>;
+  if (query.isLoading || !form) return <div className="centered-feedback">Cargando perfil...</div>;
+  if (query.isError) return <div className="centered-feedback">No pudimos cargar el perfil.</div>;
 
   return (
     <div className="page-stack">
@@ -76,10 +97,26 @@ export function ProfessionalProfilePage() {
             <div className="form-actions">
               {editingPersonal ? (
                 <>
-                  <Button variant="ghost" onClick={() => setEditingPersonal(false)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setEditingPersonal(false);
+                      setForm((current) =>
+                        current && query.data
+                          ? {
+                              ...query.data,
+                              acceptedCoveragesText: current.acceptedCoveragesText,
+                            }
+                          : current,
+                      );
+                      setServerError(null);
+                    }}
+                  >
                     Cancelar
                   </Button>
-                  <Button onClick={() => setEditingPersonal(false)}>Guardar</Button>
+                  <Button onClick={() => updateMutation.mutate("personal")} disabled={updateMutation.isPending}>
+                    {updateMutation.isPending ? "Guardando..." : "Guardar"}
+                  </Button>
                 </>
               ) : (
                 <Button variant="ghost" onClick={() => setEditingPersonal(true)}>
@@ -90,9 +127,27 @@ export function ProfessionalProfilePage() {
           }
         >
           <div className="minimal-form">
-            <Input label="Nombre" defaultValue={query.data.personal.fullName} disabled={!editingPersonal} />
-            <Input label="Telefono" defaultValue={query.data.personal.phone} disabled={!editingPersonal} />
-            <Input label="Documento" defaultValue={query.data.personal.document} disabled={!editingPersonal} />
+            <Input
+              label="Nombre"
+              value={form.name}
+              disabled={!editingPersonal}
+              onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
+            />
+            <Input
+              label="Apellido"
+              value={form.lastName}
+              disabled={!editingPersonal}
+              onChange={(event) =>
+                setForm((current) => current ? { ...current, lastName: event.target.value } : current)
+              }
+            />
+            <Input label="Email" value={form.email} disabled />
+            <Input
+              label="Telefono"
+              value={form.phone}
+              disabled={!editingPersonal}
+              onChange={(event) => setForm((current) => current ? { ...current, phone: event.target.value } : current)}
+            />
           </div>
         </Card>
 
@@ -103,10 +158,24 @@ export function ProfessionalProfilePage() {
             <div className="form-actions">
               {editingProfessional ? (
                 <>
-                  <Button variant="ghost" onClick={() => setEditingProfessional(false)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setEditingProfessional(false);
+                      if (query.data) {
+                        setForm({
+                          ...query.data,
+                          acceptedCoveragesText: query.data.acceptedCoverages.join(", "),
+                        });
+                      }
+                      setServerError(null);
+                    }}
+                  >
                     Cancelar
                   </Button>
-                  <Button onClick={() => setEditingProfessional(false)}>Guardar</Button>
+                  <Button onClick={() => updateMutation.mutate("professional")} disabled={updateMutation.isPending}>
+                    {updateMutation.isPending ? "Guardando..." : "Guardar"}
+                  </Button>
                 </>
               ) : (
                 <Button variant="ghost" onClick={() => setEditingProfessional(true)}>
@@ -117,57 +186,42 @@ export function ProfessionalProfilePage() {
           }
         >
           <div className="minimal-form">
-            <Select
-              label="Profesion"
-              options={professionOptions}
-              value={profession}
-              onChange={(event) => setProfession(event.target.value)}
+            <Input
+              label="Especialidad"
+              value={form.specialty}
               disabled={!editingProfessional}
+              onChange={(event) =>
+                setForm((current) => current ? { ...current, specialty: event.target.value } : current)
+              }
             />
-            {profession === "other" ? (
-              <Input label="Otra profesion" disabled={!editingProfessional} />
-            ) : null}
-
-            <Select
-              label="Especializacion"
-              options={specializationOptions}
-              value={specialization}
-              onChange={(event) => setSpecialization(event.target.value)}
+            <Input
+              label="Matricula"
+              value={form.licenseNumber}
               disabled={!editingProfessional}
+              onChange={(event) =>
+                setForm((current) => current ? { ...current, licenseNumber: event.target.value } : current)
+              }
             />
-            {specialization === "other" ? (
-              <Input label="Otra especializacion" disabled={!editingProfessional} />
-            ) : null}
-
-            <Input label="Matricula" defaultValue={query.data.professional.license} disabled={!editingProfessional} />
-
-            <label className="form-field">
-              <span className="field-label">Firma digital (PDF)</span>
-              <input
-                className="input-base"
-                type="file"
-                accept=".pdf,application/pdf"
-                disabled={!editingProfessional}
-                onChange={(event) => {
-                  const nextFile = event.currentTarget.files?.[0];
-                  const validationError = validatePdfUpload(nextFile);
-
-                  if (validationError) {
-                    setSignatureError(validationError);
-                    setSignatureLabel("");
-                    event.currentTarget.value = "";
-                    return;
-                  }
-
-                  setSignatureError(null);
-                  setSignatureLabel(nextFile?.name ?? "");
-                }}
-              />
-              {signatureError ? <span className="field-error">{signatureError}</span> : null}
-              {!signatureError && signatureLabel ? (
-                <span className="helper-text">{signatureLabel}</span>
-              ) : null}
-            </label>
+            <Input
+              label="Coberturas aceptadas"
+              value={form.acceptedCoveragesText}
+              disabled={!editingProfessional}
+              hint="Separalas con coma"
+              onChange={(event) =>
+                setForm((current) =>
+                  current ? { ...current, acceptedCoveragesText: event.target.value } : current,
+                )
+              }
+            />
+            <Input
+              label="Honorarios"
+              value={form.fees}
+              disabled={!editingProfessional}
+              onChange={(event) =>
+                setForm((current) => current ? { ...current, fees: event.target.value } : current)
+              }
+            />
+            {serverError ? <span className="field-error">{serverError}</span> : null}
           </div>
         </Card>
       </div>

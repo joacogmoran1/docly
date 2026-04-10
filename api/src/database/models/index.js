@@ -7,6 +7,7 @@ import Schedule from './Schedule.js';
 import Appointment from './Appointment.js';
 import Prescription from './Prescription.js';
 import Study from './Study.js';
+import MedicalRecord from './MedicalRecord.js';
 import PatientProfessional from './PatientProfessional.js';
 
 // User associations
@@ -21,11 +22,13 @@ Patient.hasOne(HealthInfo, { foreignKey: 'patientId', as: 'healthInfo' });
 Patient.hasMany(Appointment, { foreignKey: 'patientId', as: 'appointments' });
 Patient.hasMany(Prescription, { foreignKey: 'patientId', as: 'prescriptions' });
 Patient.hasMany(Study, { foreignKey: 'patientId', as: 'studies' });
+Patient.hasMany(MedicalRecord, { foreignKey: 'patientId', as: 'medicalRecords' });
 
 // Professional associations
 Professional.hasMany(Office, { foreignKey: 'professionalId', as: 'offices' });
 Professional.hasMany(Appointment, { foreignKey: 'professionalId', as: 'appointments' });
 Professional.hasMany(Prescription, { foreignKey: 'professionalId', as: 'prescriptions' });
+Professional.hasMany(MedicalRecord, { foreignKey: 'professionalId', as: 'medicalRecords' });
 
 // Office associations
 Office.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
@@ -52,12 +55,20 @@ Professional.belongsToMany(Patient, {
 Appointment.belongsTo(Patient, { foreignKey: 'patientId', as: 'patient' });
 Appointment.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
 Appointment.belongsTo(Office, { foreignKey: 'officeId', as: 'office' });
+Appointment.hasOne(MedicalRecord, { foreignKey: 'appointmentId', as: 'medicalRecord' });
 
 // Other associations
 HealthInfo.belongsTo(Patient, { foreignKey: 'patientId', as: 'patient' });
+
 Prescription.belongsTo(Patient, { foreignKey: 'patientId', as: 'patient' });
 Prescription.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
+
 Study.belongsTo(Patient, { foreignKey: 'patientId', as: 'patient' });
+Study.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
+
+MedicalRecord.belongsTo(Patient, { foreignKey: 'patientId', as: 'patient' });
+MedicalRecord.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
+MedicalRecord.belongsTo(Appointment, { foreignKey: 'appointmentId', as: 'appointment' });
 
 export {
 	User,
@@ -69,5 +80,6 @@ export {
 	Appointment,
 	Prescription,
 	Study,
+	MedicalRecord,
 	PatientProfessional,
 };

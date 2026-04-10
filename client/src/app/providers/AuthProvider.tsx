@@ -6,24 +6,32 @@ import {
   useMemo,
   useState,
 } from "react";
-import { login as loginRequest } from "@/modules/auth/api/auth.api";
-import { getSessionUserById } from "@/mocks/docly-api";
-import type { LoginFormValues } from "@/modules/auth/types/auth-forms";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getCurrentSessionUser,
+  login as loginRequest,
+  logout as logoutRequest,
+  register as registerRequest,
+} from "@/modules/auth/api/auth.api";
+import type {
+  LoginFormValues,
+  RegisterFormValues,
+} from "@/modules/auth/types/auth-forms";
 import type { SessionState, SessionUser } from "@/shared/types/auth";
 import { sessionChannel } from "@/services/auth/session-channel";
 import { sessionManager } from "@/services/auth/session-manager";
-import { tokenStorage } from "@/services/auth/token-storage";
-import { logger } from "@/services/monitoring/logger";
 
 interface AuthContextValue extends SessionState {
   isBootstrapping: boolean;
   login: (values: LoginFormValues) => Promise<SessionUser>;
-  logout: () => void;
+  register: (values: RegisterFormValues) => Promise<SessionUser>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -33,20 +41,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     async function bootstrap() {
       try {
-        const restored = sessionManager.restore();
-        if (!restored) return;
+        const restoredUser = await getCurrentSessionUser();
+        const restoredSession =
+          sessionManager.restore() ??
+          sessionManager.persist({
+            userId: restoredUser.id,
+            role: restoredUser.role,
+          });
 
-        const restoredUser = await getSessionUserById(restored.userId, restored.role);
-        if (restoredUser && active) {
+        if (active) {
           setUser(restoredUser);
-          setSessionId(restored.sessionId);
+          setSessionId(restoredSession.sessionId);
         }
-
-        if (!restoredUser) {
-          sessionManager.clear();
-        }
-      } catch (error) {
-        logger.error("No se pudo restaurar la sesion", error);
+      } catch {
         sessionManager.clear();
       } finally {
         if (active) {
@@ -66,48 +73,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const unsubscribe = sessionChannel.subscribe((event) => {
       if (!sessionId || event.sessionId === sessionId) return;
 
-      tokenStorage.clear();
+      void queryClient.clear();
       sessionManager.clear();
       setSessionId(null);
       setUser(null);
     });
 
     return unsubscribe;
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!user || !sessionId) return;
-
-    const verifySession = () => {
-      const activeSession = sessionManager.restore();
-      if (!activeSession || activeSession.sessionId !== sessionId) {
-        tokenStorage.clear();
-        sessionManager.clear();
-        setSessionId(null);
-        setUser(null);
-      }
-    };
-
-    const touchSession = () => {
-      if (document.visibilityState === "hidden") return;
-      verifySession();
-    };
-
-    const interval = window.setInterval(verifySession, 60_000);
-
-    window.addEventListener("focus", touchSession);
-    window.addEventListener("pointerdown", touchSession);
-    window.addEventListener("keydown", touchSession);
-    document.addEventListener("visibilitychange", touchSession);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", touchSession);
-      window.removeEventListener("pointerdown", touchSession);
-      window.removeEventListener("keydown", touchSession);
-      document.removeEventListener("visibilitychange", touchSession);
-    };
-  }, [sessionId, user]);
+  }, [queryClient, sessionId]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -115,13 +88,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isAuthenticated: Boolean(user),
       isBootstrapping,
       async login(values) {
-        const response = await loginRequest(values);
-        tokenStorage.set(response.tokens);
+        const nextUser = await loginRequest(values);
+        await queryClient.clear();
 
         const persistedSession = sessionManager.persist({
-          userId: response.user.id,
-          role: response.user.role,
-          expiresAt: response.tokens.expiresAt,
+          userId: nextUser.id,
+          role: nextUser.role,
         });
 
         sessionChannel.publish({
@@ -130,25 +102,48 @@ export function AuthProvider({ children }: PropsWithChildren) {
         });
 
         setSessionId(persistedSession.sessionId);
-        setUser(response.user);
-        return response.user;
+        setUser(nextUser);
+        return nextUser;
       },
-      logout() {
-        const activeSessionId = sessionId;
-        tokenStorage.clear();
-        sessionManager.clear();
-        setSessionId(null);
-        setUser(null);
+      async register(values) {
+        const nextUser = await registerRequest(values);
+        await queryClient.clear();
 
-        if (activeSessionId) {
-          sessionChannel.publish({
-            type: "session-cleared",
-            sessionId: activeSessionId,
-          });
+        const persistedSession = sessionManager.persist({
+          userId: nextUser.id,
+          role: nextUser.role,
+        });
+
+        sessionChannel.publish({
+          type: "session-replaced",
+          sessionId: persistedSession.sessionId,
+        });
+
+        setSessionId(persistedSession.sessionId);
+        setUser(nextUser);
+        return nextUser;
+      },
+      async logout() {
+        const activeSessionId = sessionId;
+
+        try {
+          await logoutRequest();
+        } finally {
+          await queryClient.clear();
+          sessionManager.clear();
+          setSessionId(null);
+          setUser(null);
+
+          if (activeSessionId) {
+            sessionChannel.publish({
+              type: "session-cleared",
+              sessionId: activeSessionId,
+            });
+          }
         }
       },
     }),
-    [isBootstrapping, sessionId, user],
+    [isBootstrapping, queryClient, sessionId, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

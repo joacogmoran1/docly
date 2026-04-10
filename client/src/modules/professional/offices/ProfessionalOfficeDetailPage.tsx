@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { getProfessionalOfficeDetailMock, getProfessionalPatientsMock } from "@/mocks/docly-api";
+import {
+  createAppointment,
+  getProfessionalAppointments,
+} from "@/modules/appointments/api/appointments.api";
+import { getProfessionalOffice } from "@/modules/professional/api/professional.api";
+import { buildAgendaFromSchedules, mapAppointmentsToPatientOptions } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { Card } from "@/shared/ui/Card";
-import { Input } from "@/shared/ui/Input";
-import { Select } from "@/shared/ui/Select";
 import { Button } from "@/shared/ui/Button";
 import { MonthCalendar } from "@/shared/components/MonthCalendar";
 import { AgendaDayPanel } from "@/shared/components/AgendaDayPanel";
@@ -14,51 +17,85 @@ import { BookAppointmentModal } from "@/shared/components/BookAppointmentModal";
 import { getAgendaForDate } from "@/shared/utils/agenda";
 import { formatNumericDate } from "@/shared/utils/date";
 
-const durationOptions = [
-  { value: "10 min", label: "10 min" },
-  { value: "15 min", label: "15 min" },
-  { value: "20 min", label: "20 min" },
-  { value: "30 min", label: "30 min" },
-  { value: "45 min", label: "45 min" },
-  { value: "60 min", label: "60 min" },
-];
+function getToday() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
-const weekdays = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"];
-const TODAY = "2026-04-08";
-const CURRENT_MONTH = new Date(2026, 3, 1);
+const weekdayLabels = ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"];
 
 export function ProfessionalOfficeDetailPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { officeId = "" } = useParams();
+  const today = getToday();
+  const initialMonth = new Date();
   const [tab, setTab] = useState("agenda");
-  const [selectedDate, setSelectedDate] = useState(TODAY);
-  const [displayMonth, setDisplayMonth] = useState(new Date(2026, 3, 1));
-  const [editingData, setEditingData] = useState(false);
-  const [editingRules, setEditingRules] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [displayMonth, setDisplayMonth] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1));
   const [slotToSchedule, setSlotToSchedule] = useState<string | null>(null);
 
-  const query = useQuery({
-    queryKey: queryKeys.professionalOfficeDetail(officeId),
-    queryFn: () => getProfessionalOfficeDetailMock(officeId),
+  const officeQuery = useQuery({
+    queryKey: [...queryKeys.professionalOfficeDetail(officeId), "office"],
+    queryFn: () => getProfessionalOffice(officeId),
+    enabled: Boolean(officeId),
   });
-  const patientsQuery = useQuery({
-    queryKey: queryKeys.professionalPatients,
-    queryFn: getProfessionalPatientsMock,
+  const appointmentsQuery = useQuery({
+    queryKey: [...queryKeys.professionalAppointments, officeId],
+    queryFn: async () => {
+      const office = await getProfessionalOffice(officeId);
+      return getProfessionalAppointments(office.professionalId);
+    },
+    enabled: Boolean(officeId),
   });
+
+  const agenda = useMemo(() => {
+    if (!officeQuery.data || !appointmentsQuery.data) return [];
+    return buildAgendaFromSchedules(
+      [officeQuery.data],
+      appointmentsQuery.data.filter((appointment) => appointment.officeId === officeQuery.data?.id),
+      displayMonth.getFullYear(),
+      displayMonth.getMonth(),
+    );
+  }, [appointmentsQuery.data, displayMonth, officeQuery.data]);
 
   const dayItems = useMemo(
-    () => getAgendaForDate(query.data?.agenda ?? [], selectedDate, officeId),
-    [officeId, query.data?.agenda, selectedDate],
+    () => getAgendaForDate(agenda, selectedDate, officeId),
+    [agenda, officeId, selectedDate],
   );
+  const patientOptions = useMemo(
+    () => mapAppointmentsToPatientOptions(appointmentsQuery.data ?? []),
+    [appointmentsQuery.data],
+  );
+  const createAppointmentMutation = useMutation({
+    mutationFn: (patientId: string) => {
+      if (!officeQuery.data || !slotToSchedule) {
+        throw new Error("No se pudo preparar el turno.");
+      }
 
-  if (query.isLoading || patientsQuery.isLoading) {
+      return createAppointment({
+        patientId,
+        professionalId: officeQuery.data.professionalId,
+        officeId: officeQuery.data.id,
+        date: selectedDate,
+        time: slotToSchedule,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: [...queryKeys.professionalAppointments, officeId],
+      });
+    },
+  });
+
+  if (officeQuery.isLoading || appointmentsQuery.isLoading) {
     return <div className="centered-feedback">Cargando consultorio...</div>;
   }
-  if (query.isError || patientsQuery.isError || !query.data || !patientsQuery.data) {
+  if (officeQuery.isError || appointmentsQuery.isError || !officeQuery.data || !appointmentsQuery.data) {
     return <div className="centered-feedback">No pudimos cargar el consultorio.</div>;
   }
 
-  const { office } = query.data;
+  const office = officeQuery.data;
   const tabs = [
     {
       value: "agenda",
@@ -68,7 +105,7 @@ export function ProfessionalOfficeDetailPage() {
           <div className="calendar-layout calendar-layout-viewport">
             <section className="panel panel-separated">
               <MonthCalendar
-                agenda={query.data.agenda}
+                agenda={agenda}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
                 officeId={officeId}
@@ -85,10 +122,11 @@ export function ProfessionalOfficeDetailPage() {
                   )
                 }
                 onGoToday={() => {
-                  setDisplayMonth(new Date(2026, 3, 1));
-                  setSelectedDate(TODAY);
+                  const now = new Date();
+                  setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                  setSelectedDate(today);
                 }}
-                canGoPrevious={displayMonth.getTime() > CURRENT_MONTH.getTime()}
+                canGoPrevious
               />
             </section>
             <AgendaDayPanel
@@ -106,171 +144,52 @@ export function ProfessionalOfficeDetailPage() {
       label: "Configuracion",
       content: (
         <div className="cards-grid office-config-grid">
-          <Card
-            title="Datos"
-            className="panel-separated card-fit"
-            action={
-              <div className="form-actions">
-                {editingData ? (
-                  <>
-                    <Button variant="ghost" onClick={() => setEditingData(false)}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={() => setEditingData(false)}>Guardar</Button>
-                  </>
-                ) : (
-                  <Button variant="ghost" onClick={() => setEditingData(true)}>
-                    Editar
-                  </Button>
-                )}
+          <Card title="Datos" className="panel-separated card-fit">
+            <div className="plain-list">
+              <div className="list-row">
+                <div className="stack-sm">
+                  <strong>Nombre</strong>
+                  <span className="meta">{office.name}</span>
+                </div>
               </div>
-            }
-          >
-            <div className="minimal-form">
-              <Input label="Nombre" defaultValue={office.name} disabled={!editingData} />
-              <Input label="Ubicacion" defaultValue={office.address} disabled={!editingData} />
+              <div className="list-row">
+                <div className="stack-sm">
+                  <strong>Direccion</strong>
+                  <span className="meta">{office.address}</span>
+                </div>
+              </div>
+              <div className="list-row">
+                <div className="stack-sm">
+                  <strong>Telefono</strong>
+                  <span className="meta">{office.phone ?? "Sin telefono cargado"}</span>
+                </div>
+              </div>
+              <div className="list-row">
+                <div className="stack-sm">
+                  <strong>Duracion por turno</strong>
+                  <span className="meta">{office.appointmentDuration} min</span>
+                </div>
+              </div>
             </div>
           </Card>
 
-          <Card
-            title="Dias, horarios y turnos"
-            className="panel-separated office-rules-card"
-            action={
-              <div className="form-actions">
-                {editingRules ? (
-                  <>
-                    <Button variant="ghost" onClick={() => setEditingRules(false)}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={() => setEditingRules(false)}>Guardar</Button>
-                  </>
-                ) : (
-                  <Button variant="ghost" onClick={() => setEditingRules(true)}>
-                    Editar
-                  </Button>
-                )}
-              </div>
-            }
-          >
-            <div className="stack-md office-rules-scroll">
-              <div className="checkbox-grid">
-                {weekdays.map((day) => (
-                  <label key={day} className="checkbox-chip">
-                    <input
-                      type="checkbox"
-                      defaultChecked={office.weeklyRules.some((rule) => rule.day === day)}
-                      disabled={!editingRules}
-                    />
-                    <span>{day}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="rules-stack">
-                {office.weeklyRules.map((rule, index) => (
-                  <div key={`${rule.day}-${index}`} className="day-rule-card">
-                    <div className="day-rule-head">
-                      <strong>{rule.day}</strong>
-                      {editingRules ? (
-                        <Button variant="ghost" className="button-inline">
-                          Agregar horario
-                        </Button>
-                      ) : null}
-                    </div>
-
-                    <div className="day-rule-body">
-                      <div className="schedule-box">
-                        <div className="schedule-row">
-                          <Input
-                            label="Horario 1"
-                            defaultValue={rule.hours.split("/")[0]?.trim() ?? ""}
-                            disabled={!editingRules}
-                          />
-                          <Select
-                            label="Duracion"
-                            options={durationOptions}
-                            defaultValue={rule.duration}
-                            disabled={!editingRules}
-                          />
-                          <Button
-                            variant="danger"
-                            className="button-inline button-remove-slot"
-                            disabled={!editingRules}
-                          >
-                            Quitar horario
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="schedule-box">
-                        <div className="schedule-row">
-                          <Input
-                            label="Horario 2"
-                            defaultValue={rule.hours.split("/")[1]?.trim() ?? ""}
-                            disabled={!editingRules}
-                          />
-                          <Select
-                            label="Duracion"
-                            options={durationOptions}
-                            defaultValue={rule.duration}
-                            disabled={!editingRules}
-                          />
-                          <Button
-                            variant="danger"
-                            className="button-inline button-remove-slot"
-                            disabled={!editingRules}
-                          >
-                            Quitar horario
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+          <Card title="Horarios" className="panel-separated office-rules-card">
+            <div className="plain-list">
+              {(office.schedules ?? []).filter((schedule) => schedule.isActive).map((schedule, index) => (
+                <div key={`${schedule.dayOfWeek}-${index}`} className="list-row">
+                  <div className="stack-sm">
+                    <strong>{weekdayLabels[schedule.dayOfWeek] ?? "Dia"}</strong>
+                    <span className="meta">
+                      {schedule.startTime.slice(0, 5)} a {schedule.endTime.slice(0, 5)}
+                    </span>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+              {!(office.schedules ?? []).length ? (
+                <span className="meta">Este consultorio todavia no tiene horarios configurados.</span>
+              ) : null}
             </div>
           </Card>
-        </div>
-      ),
-    },
-    {
-      value: "special",
-      label: "Turnos especiales",
-      content: (
-        <div className="viewport-section">
-          <div className="calendar-layout calendar-layout-viewport">
-            <section className="panel panel-separated">
-              <MonthCalendar
-                agenda={query.data.agenda}
-                selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
-                officeId={officeId}
-                year={displayMonth.getFullYear()}
-                month={displayMonth.getMonth()}
-                onPreviousMonth={() =>
-                  setDisplayMonth(
-                    (current) => new Date(current.getFullYear(), current.getMonth() - 1, 1),
-                  )
-                }
-                onNextMonth={() =>
-                  setDisplayMonth(
-                    (current) => new Date(current.getFullYear(), current.getMonth() + 1, 1),
-                  )
-                }
-                onGoToday={() => {
-                  setDisplayMonth(new Date(2026, 3, 1));
-                  setSelectedDate(TODAY);
-                }}
-                canGoPrevious={displayMonth.getTime() > CURRENT_MONTH.getTime()}
-              />
-            </section>
-            <AgendaDayPanel
-              title="Turnos del dia"
-              dateLabel={formatNumericDate(selectedDate)}
-              items={dayItems}
-              mode="special"
-            />
-          </div>
         </div>
       ),
     },
@@ -303,8 +222,13 @@ export function ProfessionalOfficeDetailPage() {
         isOpen={Boolean(slotToSchedule)}
         title="Agendar paciente"
         description={slotToSchedule ? `Horario seleccionado ${selectedDate} ${slotToSchedule}` : undefined}
-        patients={patientsQuery.data}
+        patients={patientOptions}
+        isSubmitting={createAppointmentMutation.isPending}
         onClose={() => setSlotToSchedule(null)}
+        onConfirm={async (patientId) => {
+          await createAppointmentMutation.mutateAsync(patientId);
+          setSlotToSchedule(null);
+        }}
       />
     </div>
   );

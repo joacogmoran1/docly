@@ -1,22 +1,10 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getPatientSettingsMock } from "@/mocks/docly-api";
 import { useAuth } from "@/app/providers/AuthProvider";
-import { queryKeys } from "@/shared/constants/query-keys";
 import { Card } from "@/shared/ui/Card";
 import { Input } from "@/shared/ui/Input";
 import { Button } from "@/shared/ui/Button";
 
 export function PatientSettingsPage() {
-  const { logout } = useAuth();
-  const [editingAccount, setEditingAccount] = useState(false);
-  const query = useQuery({
-    queryKey: queryKeys.patientSettings,
-    queryFn: getPatientSettingsMock,
-  });
-
-  if (query.isLoading) return <div className="centered-feedback">Cargando configuracion...</div>;
-  if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar la configuracion.</div>;
+  const { user, logout } = useAuth();
 
   return (
     <div className="page-stack">
@@ -28,48 +16,23 @@ export function PatientSettingsPage() {
         <div className="settings-main-column">
           <Card
             title="Datos de la cuenta"
-            description="Mail de acceso y cambio de contrasena."
+            description="La API documentada solo expone autenticacion basica por ahora."
             className="panel-separated"
-            action={
-              <div className="form-actions">
-                {editingAccount ? (
-                  <>
-                    <Button variant="ghost" onClick={() => setEditingAccount(false)}>
-                      Cancelar
-                    </Button>
-                    <Button onClick={() => setEditingAccount(false)}>Guardar</Button>
-                  </>
-                ) : (
-                  <Button variant="ghost" onClick={() => setEditingAccount(true)}>
-                    Editar
-                  </Button>
-                )}
-              </div>
-            }
           >
             <div className="minimal-form">
-              <Input label="Email" defaultValue={query.data.email} disabled={!editingAccount} />
-              <Input label="Nueva contrasena" type="password" disabled={!editingAccount} />
-              <Input label="Confirmar contrasena" type="password" disabled={!editingAccount} />
+              <Input label="Email" value={user?.email ?? ""} disabled />
+              <Input label="Rol" value={user?.role ?? ""} disabled />
             </div>
           </Card>
 
           <Card
             title="Permisos otorgados"
-            description="Profesionales que pueden acceder a tu informacion."
+            description="La documentacion del backend no incluye todavia la administracion de permisos finos desde esta vista."
             className="panel-separated"
           >
-            <div className="plain-list">
-              {query.data.permissions.map((permission) => (
-                <div key={permission.id} className="list-row">
-                  <div className="stack-sm">
-                    <strong>{permission.professional}</strong>
-                    <span className="meta">{permission.scope}</span>
-                  </div>
-                  <Button variant="ghost">Revocar</Button>
-                </div>
-              ))}
-            </div>
+            <p className="meta">
+              Cuando el backend exponga ese contrato, podemos conectar esta pantalla sin inventar datos.
+            </p>
           </Card>
         </div>
 
@@ -77,17 +40,8 @@ export function PatientSettingsPage() {
           <Card title="Sesion" className="panel-separated settings-action-card">
             <div className="stack-md">
               <p className="meta">Cierra la sesion activa de este dispositivo.</p>
-              <Button variant="ghost" fullWidth onClick={logout}>
+              <Button variant="ghost" fullWidth onClick={() => void logout()}>
                 Cerrar sesion
-              </Button>
-            </div>
-          </Card>
-
-          <Card title="Eliminar cuenta" className="panel-separated settings-action-card">
-            <div className="stack-md">
-              <p className="meta">Accion permanente. Tus datos dejaran de estar disponibles.</p>
-              <Button variant="danger" fullWidth>
-                Eliminar cuenta
               </Button>
             </div>
           </Card>

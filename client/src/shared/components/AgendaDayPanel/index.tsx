@@ -6,7 +6,7 @@ interface AgendaDayPanelProps {
   title?: string;
   dateLabel?: string;
   items: AgendaDay[];
-  mode?: "default" | "special";
+  mode?: "default" | "special" | "patient";
   onSelectFreeSlot?: (slot: string) => void;
 }
 
@@ -28,8 +28,18 @@ export function AgendaDayPanel({
         minute: "2-digit",
         hour12: false,
       }),
-      title: mode === "special" ? "Agendado" : item.patientName,
-      subtitle: mode === "special" ? "Turno reservado" : item.reason,
+      title:
+        mode === "special"
+          ? "Agendado"
+          : mode === "patient"
+            ? "Horario ocupado"
+            : item.patientName,
+      subtitle:
+        mode === "special"
+          ? "Turno reservado"
+          : mode === "patient"
+            ? "No disponible"
+            : item.reason,
       patientId: item.patientId,
       kind: "Agendado",
     })),
@@ -100,7 +110,7 @@ export function AgendaDayPanel({
                       >
                         Agendar
                       </Button>
-                    ) : row.patientId ? (
+                    ) : mode === "patient" ? null : row.patientId ? (
                       <Link to={`/professional/patients/${row.patientId}`}>
                         <Button variant="ghost" className="button-inline">
                           Ver

@@ -33,6 +33,13 @@ export default defineConfig({
   },
   server: {
     headers: DEVELOPMENT_SECURITY_HEADERS,
+    proxy: {
+      "/api": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   preview: {
     headers: SECURITY_HEADERS,

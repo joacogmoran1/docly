@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { getPatientProfessionalDetailMock } from "@/mocks/docly-api";
+import { getPatientProfessionalDetail } from "@/modules/patient/api/patient.api";
+import { buildAgendaFromSchedules } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { MonthCalendar } from "@/shared/components/MonthCalendar";
 import { AgendaDayPanel } from "@/shared/components/AgendaDayPanel";
@@ -12,25 +13,45 @@ import { Button } from "@/shared/ui/Button";
 import { getAgendaForDate } from "@/shared/utils/agenda";
 import { formatNumericDate } from "@/shared/utils/date";
 
-const TODAY = "2026-04-08";
-const CURRENT_MONTH = new Date(2026, 3, 1);
+function getToday() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 export function PatientProfessionalDetailPage() {
   const navigate = useNavigate();
   const { professionalId = "" } = useParams();
+  const today = getToday();
+  const initialMonth = new Date();
   const [officeId, setOfficeId] = useState("all");
-  const [selectedDate, setSelectedDate] = useState("2026-04-09");
-  const [displayMonth, setDisplayMonth] = useState(new Date(2026, 3, 1));
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [displayMonth, setDisplayMonth] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1));
   const [tab, setTab] = useState("agenda");
   const query = useQuery({
-    queryKey: queryKeys.patientProfessionalDetail(professionalId),
-    queryFn: () => getPatientProfessionalDetailMock(professionalId),
+    queryKey: [...queryKeys.patientProfessionalDetail(professionalId), displayMonth.getFullYear(), displayMonth.getMonth()],
+    queryFn: () =>
+      getPatientProfessionalDetail(
+        professionalId,
+        displayMonth.getFullYear(),
+        displayMonth.getMonth(),
+      ),
+    enabled: Boolean(professionalId),
   });
+
+  const agenda = useMemo(() => {
+    if (!query.data) return [];
+    return buildAgendaFromSchedules(
+      query.data.professional.offices ?? [],
+      query.data.appointments,
+      displayMonth.getFullYear(),
+      displayMonth.getMonth(),
+    );
+  }, [displayMonth, query.data]);
 
   const officeFilter = officeId === "all" ? undefined : officeId;
   const dayItems = useMemo(
-    () => getAgendaForDate(query.data?.agenda ?? [], selectedDate, officeFilter),
-    [officeFilter, query.data?.agenda, selectedDate],
+    () => getAgendaForDate(agenda, selectedDate, officeFilter),
+    [agenda, officeFilter, selectedDate],
   );
 
   if (query.isLoading) return <div className="centered-feedback">Cargando profesional...</div>;
@@ -46,7 +67,7 @@ export function PatientProfessionalDetailPage() {
           <div className="calendar-layout calendar-layout-viewport">
             <section className="panel panel-separated">
               <MonthCalendar
-                agenda={query.data.agenda}
+                agenda={agenda}
                 selectedDate={selectedDate}
                 onSelectDate={setSelectedDate}
                 officeId={officeFilter}
@@ -57,7 +78,7 @@ export function PatientProfessionalDetailPage() {
                     <Select
                       options={[
                         { value: "all", label: "Todos los consultorios" },
-                        ...professional.offices.map((office) => ({
+                        ...(professional.offices ?? []).map((office) => ({
                           value: office.id,
                           label: office.name,
                         })),
@@ -78,53 +99,67 @@ export function PatientProfessionalDetailPage() {
                   )
                 }
                 onGoToday={() => {
-                  setDisplayMonth(new Date(2026, 3, 1));
-                  setSelectedDate(TODAY);
+                  const now = new Date();
+                  setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                  setSelectedDate(today);
                 }}
-                canGoPrevious={displayMonth.getTime() > CURRENT_MONTH.getTime()}
+                canGoPrevious
               />
             </section>
-            <AgendaDayPanel title="Turnos del dia" dateLabel={formatNumericDate(selectedDate)} items={dayItems} />
+            <AgendaDayPanel
+              title="Agenda del profesional"
+              dateLabel={formatNumericDate(selectedDate)}
+              items={dayItems}
+              mode="patient"
+            />
           </div>
         </div>
       ),
     },
     {
-      value: "records",
-      label: "Registros",
+      value: "info",
+      label: "Informacion",
       content: (
-        <Card title="Registros" className="panel-separated">
+        <Card title="Perfil profesional" className="panel-separated">
           <div className="plain-list">
-            {query.data.records.map((item) => (
-              <div key={item.id} className="list-row">
-                <div className="stack-sm">
-                  <strong>{item.title}</strong>
-                  <span className="meta">{item.description}</span>
-                </div>
-                <Link to={`/patient/professionals/${professionalId}/records/${item.id}`}>
-                  <Button variant="ghost">Ver</Button>
-                </Link>
+            <div className="list-row">
+              <div className="stack-sm">
+                <strong>Nombre</strong>
+                <span className="meta">
+                  {[professional.user.name, professional.user.lastName].filter(Boolean).join(" ")}
+                </span>
               </div>
-            ))}
-          </div>
-        </Card>
-      ),
-    },
-    {
-      value: "prescriptions",
-      label: "Recetas",
-      content: (
-        <Card title="Recetas descargables" className="panel-separated">
-          <div className="plain-list">
-            {query.data.prescriptions.map((item) => (
-              <div key={item.id} className="list-row">
-                <div className="stack-sm">
-                  <strong>{item.medication}</strong>
-                  <span className="meta">{item.dose}</span>
-                </div>
-                <Button variant="ghost">Descargar</Button>
+            </div>
+            <div className="list-row">
+              <div className="stack-sm">
+                <strong>Especialidad</strong>
+                <span className="meta">{professional.specialty}</span>
               </div>
-            ))}
+            </div>
+            <div className="list-row">
+              <div className="stack-sm">
+                <strong>Matricula</strong>
+                <span className="meta">{professional.licenseNumber}</span>
+              </div>
+            </div>
+            <div className="list-row">
+              <div className="stack-sm">
+                <strong>Coberturas</strong>
+                <span className="meta">
+                  {professional.acceptedCoverages.length
+                    ? professional.acceptedCoverages.join(", ")
+                    : "Sin coberturas cargadas"}
+                </span>
+              </div>
+            </div>
+            <div className="list-row">
+              <div className="stack-sm">
+                <strong>Honorarios</strong>
+                <span className="meta">
+                  {professional.fees ? `$${professional.fees}` : "A confirmar"}
+                </span>
+              </div>
+            </div>
           </div>
         </Card>
       ),

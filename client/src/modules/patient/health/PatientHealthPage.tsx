@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getPatientHealthMock } from "@/mocks/docly-api";
+import { getPatientHealthSections } from "@/modules/patient/api/patient.api";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { ListEntry } from "@/shared/components/ListEntry";
 import { Button } from "@/shared/ui/Button";
 import { formatNumericDate } from "@/shared/utils/date";
 
 export function PatientHealthPage() {
+  const { user } = useAuth();
+  const patientId = user?.patientId ?? "";
   const query = useQuery({
-    queryKey: queryKeys.patientHealth,
-    queryFn: getPatientHealthMock,
+    queryKey: [...queryKeys.patientHealth, patientId],
+    queryFn: () => getPatientHealthSections(patientId),
+    enabled: Boolean(patientId),
   });
 
   if (query.isLoading) return <div className="centered-feedback">Cargando salud...</div>;

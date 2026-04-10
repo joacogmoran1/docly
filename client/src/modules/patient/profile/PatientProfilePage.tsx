@@ -1,13 +1,16 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getPatientProfileMock } from "@/mocks/docly-api";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getPatientProfile, updatePatientProfile } from "@/modules/patient/api/patient.api";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { Card } from "@/shared/ui/Card";
 import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
 import { Button } from "@/shared/ui/Button";
+import type { PatientProfileView } from "@/services/api/mappers";
 
 const coverageOptions = [
+  { value: "", label: "Seleccionar cobertura" },
   { value: "OSDE", label: "OSDE" },
   { value: "Swiss Medical", label: "Swiss Medical" },
   { value: "Galeno", label: "Galeno" },
@@ -31,27 +34,62 @@ const coverageOptions = [
   { value: "IOMA", label: "IOMA" },
   { value: "PAMI", label: "PAMI" },
   { value: "IOSFA", label: "IOSFA" },
-  { value: "Poder Judicial", label: "Obra Social del Poder Judicial" },
   { value: "Particular", label: "Particular" },
   { value: "Sin cobertura", label: "Sin cobertura" },
-  { value: "Otra", label: "Otra" },
+];
+
+const genderOptions = [
+  { value: "", label: "Seleccionar genero" },
+  { value: "male", label: "Masculino" },
+  { value: "female", label: "Femenino" },
+  { value: "other", label: "Otro" },
 ];
 
 export function PatientProfilePage() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const patientId = user?.patientId ?? "";
   const [editing, setEditing] = useState(false);
-  const [coverage, setCoverage] = useState("");
+  const [form, setForm] = useState<PatientProfileView | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
   const query = useQuery({
-    queryKey: queryKeys.patientProfile,
-    queryFn: getPatientProfileMock,
+    queryKey: [...queryKeys.patientProfile, patientId],
+    queryFn: () => getPatientProfile(patientId),
+    enabled: Boolean(patientId),
+  });
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      updatePatientProfile(patientId, {
+        name: form?.name || undefined,
+        lastName: form?.lastName || undefined,
+        phone: form?.phone || undefined,
+        birthDate: form?.birthDate || undefined,
+        gender: form?.gender || undefined,
+        bloodType: form?.bloodType || undefined,
+        medicalCoverage: form?.coverage || undefined,
+        coverageNumber: form?.coverageNumber || undefined,
+      }),
+    onSuccess: async (nextProfile) => {
+      setForm(nextProfile);
+      setEditing(false);
+      setServerError(null);
+      await queryClient.invalidateQueries({
+        queryKey: [...queryKeys.patientProfile, patientId],
+      });
+    },
+    onError: (error) => {
+      setServerError(error instanceof Error ? error.message : "No se pudo guardar el perfil.");
+    },
   });
 
-  if (query.isLoading) return <div className="centered-feedback">Cargando perfil...</div>;
-  if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar el perfil.</div>;
+  useEffect(() => {
+    if (query.data) {
+      setForm(query.data);
+    }
+  }, [query.data]);
 
-  const selectedCoverage = coverage || query.data.coverage;
-  const options = coverageOptions.some((option) => option.value === selectedCoverage)
-    ? coverageOptions
-    : [{ value: selectedCoverage, label: selectedCoverage }, ...coverageOptions];
+  if (query.isLoading || !form) return <div className="centered-feedback">Cargando perfil...</div>;
+  if (query.isError) return <div className="centered-feedback">No pudimos cargar el perfil.</div>;
 
   return (
     <div className="page-stack">
@@ -66,10 +104,21 @@ export function PatientProfilePage() {
           <div className="form-actions">
             {editing ? (
               <>
-                <Button variant="ghost" onClick={() => setEditing(false)}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setEditing(false);
+                    if (query.data) {
+                      setForm(query.data);
+                    }
+                    setServerError(null);
+                  }}
+                >
                   Cancelar
                 </Button>
-                <Button onClick={() => setEditing(false)}>Guardar</Button>
+                <Button onClick={() => updateMutation.mutate()} disabled={updateMutation.isPending}>
+                  {updateMutation.isPending ? "Guardando..." : "Guardar"}
+                </Button>
               </>
             ) : (
               <Button variant="ghost" onClick={() => setEditing(true)}>
@@ -80,17 +129,71 @@ export function PatientProfilePage() {
         }
       >
         <div className="minimal-form">
-          <Input label="Nombre" defaultValue={query.data.fullName} disabled={!editing} />
-          <Input label="Documento" defaultValue={query.data.document} disabled={!editing} />
-          <Input label="Fecha de nacimiento" defaultValue={query.data.birthDate} disabled={!editing} />
-          <Input label="Telefono" defaultValue={query.data.phone} disabled={!editing} />
+          <Input
+            label="Nombre"
+            value={form.name}
+            disabled={!editing}
+            onChange={(event) => setForm((current) => current ? { ...current, name: event.target.value } : current)}
+          />
+          <Input
+            label="Apellido"
+            value={form.lastName}
+            disabled={!editing}
+            onChange={(event) =>
+              setForm((current) => current ? { ...current, lastName: event.target.value } : current)
+            }
+          />
+          <Input label="Email" value={form.email} disabled />
+          <Input
+            label="Fecha de nacimiento"
+            type="date"
+            value={form.birthDate}
+            disabled={!editing}
+            onChange={(event) =>
+              setForm((current) => current ? { ...current, birthDate: event.target.value } : current)
+            }
+          />
+          <Input
+            label="Telefono"
+            value={form.phone}
+            disabled={!editing}
+            onChange={(event) => setForm((current) => current ? { ...current, phone: event.target.value } : current)}
+          />
+          <Select
+            label="Genero"
+            options={genderOptions}
+            value={form.gender}
+            disabled={!editing}
+            onChange={(event) =>
+              setForm((current) => current ? { ...current, gender: event.target.value } : current)
+            }
+          />
+          <Input
+            label="Grupo sanguineo"
+            value={form.bloodType}
+            disabled={!editing}
+            onChange={(event) =>
+              setForm((current) => current ? { ...current, bloodType: event.target.value } : current)
+            }
+          />
           <Select
             label="Cobertura"
-            options={options}
-            value={selectedCoverage}
+            options={coverageOptions}
+            value={form.coverage}
             disabled={!editing}
-            onChange={(event) => setCoverage(event.target.value)}
+            onChange={(event) =>
+              setForm((current) => current ? { ...current, coverage: event.target.value } : current)
+            }
           />
+          <Input
+            label="Numero de afiliado"
+            value={form.coverageNumber}
+            disabled={!editing}
+            onChange={(event) =>
+              setForm((current) => current ? { ...current, coverageNumber: event.target.value } : current)
+            }
+          />
+          {serverError ? <span className="field-error">{serverError}</span> : null}
         </div>
       </Card>
     </div>

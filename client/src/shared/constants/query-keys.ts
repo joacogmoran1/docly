@@ -1,7 +1,9 @@
 export const queryKeys = {
   session: ["session"],
   patientDashboard: ["patient-dashboard"],
+  patientDashboardAppointments: ["patient-dashboard-appointments"],
   patientProfessionals: ["patient-professionals"],
+  patientProfessionalSearch: ["patient-professional-search"],
   patientProfessionalDetail: (id: string) => ["patient-professional-detail", id],
   patientAppointments: ["patient-appointments"],
   patientHealth: ["patient-health"],
@@ -10,6 +12,7 @@ export const queryKeys = {
   patientProfile: ["patient-profile"],
   patientSettings: ["patient-settings"],
   professionalDashboard: ["professional-dashboard"],
+  professionalAppointments: ["professional-appointments"],
   professionalPatients: ["professional-patients"],
   professionalPatientDetail: (id: string) => ["professional-patient-detail", id],
   professionalSchedule: ["professional-schedule"],

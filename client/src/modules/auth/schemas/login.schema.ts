@@ -30,7 +30,6 @@ export const loginSchema = z.object({
     "La contrasena debe tener al menos 6 caracteres.",
     128,
   ),
-  role: z.enum(["patient", "professional"]).optional(),
 });
 
 export const forgotPasswordSchema = z.object({
@@ -42,8 +41,7 @@ export const registerSchema = z
     role: z.enum(["patient", "professional"]),
     fullName: sanitizedText(3, "Ingresa nombre y apellido.", 120),
     email: sanitizedEmail,
-    phone: sanitizedText(8, "Ingresa un telefono valido.", 40),
-    document: sanitizedText(7, "Ingresa un documento valido.", 32),
+    phone: sanitizedOptionalText(40),
     specialty: sanitizedOptionalText(80),
     license: sanitizedOptionalText(40),
     password: sanitizedText(

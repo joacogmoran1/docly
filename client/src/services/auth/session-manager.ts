@@ -1,7 +1,4 @@
-import {
-  SESSION_MAX_IDLE_MS,
-  SESSION_STORAGE_VERSION,
-} from "@/shared/config/security";
+import { SESSION_STORAGE_VERSION } from "@/shared/config/security";
 import type { Role } from "@/shared/types/auth";
 
 const SESSION_KEY = "docly:session";
@@ -11,7 +8,6 @@ export interface StoredSession {
   sessionId: string;
   userId: string;
   role: Role;
-  expiresAt: string;
   createdAt: number;
   lastActivityAt: number;
 }
@@ -50,19 +46,9 @@ function isStoredSession(value: unknown): value is StoredSession {
     typeof candidate.sessionId === "string" &&
     typeof candidate.userId === "string" &&
     (candidate.role === "patient" || candidate.role === "professional") &&
-    typeof candidate.expiresAt === "string" &&
     typeof candidate.createdAt === "number" &&
     typeof candidate.lastActivityAt === "number"
   );
-}
-
-function isExpired(session: StoredSession) {
-  const expiresAt = Date.parse(session.expiresAt);
-  if (Number.isNaN(expiresAt)) return true;
-
-  const idleExceeded = Date.now() - session.lastActivityAt > SESSION_MAX_IDLE_MS;
-
-  return Date.now() >= expiresAt || idleExceeded;
 }
 
 function createSessionId() {
@@ -77,7 +63,6 @@ export const sessionManager = {
   persist(session: {
     userId: string;
     role: Role;
-    expiresAt: string;
   }) {
     const now = Date.now();
     const stored: StoredSession = {
@@ -85,7 +70,6 @@ export const sessionManager = {
       sessionId: createSessionId(),
       userId: session.userId,
       role: session.role,
-      expiresAt: session.expiresAt,
       createdAt: now,
       lastActivityAt: now,
     };
@@ -100,7 +84,7 @@ export const sessionManager = {
 
     try {
       const parsed = JSON.parse(raw) as unknown;
-      if (!isStoredSession(parsed) || isExpired(parsed)) {
+      if (!isStoredSession(parsed)) {
         safeRemove();
         return null;
       }
