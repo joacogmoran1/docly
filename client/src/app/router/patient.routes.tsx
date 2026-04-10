@@ -1,0 +1,38 @@
+import type { RouteObject } from "react-router-dom";
+import { PatientLayout } from "@/app/layouts/PatientLayout";
+import { RoleGuard } from "@/app/guards/RoleGuard";
+import { PatientDashboardPage } from "@/modules/patient/dashboard/PatientDashboardPage";
+import { PatientHealthPage } from "@/modules/patient/health/PatientHealthPage";
+import { PatientHealthDetailPage } from "@/modules/patient/health/PatientHealthDetailPage";
+import { PatientPrescriptionDetailPage } from "@/modules/patient/prescriptions/PatientPrescriptionDetailPage";
+import { PatientProfessionalsPage } from "@/modules/patient/professionals/PatientProfessionalsPage";
+import { PatientProfessionalDetailPage } from "@/modules/patient/professionals/PatientProfessionalDetailPage";
+import { PatientProfessionalRecordDetailPage } from "@/modules/patient/professionals/PatientProfessionalRecordDetailPage";
+import { PatientProfilePage } from "@/modules/patient/profile/PatientProfilePage";
+import { PatientSettingsPage } from "@/modules/patient/settings/PatientSettingsPage";
+import { PatientStudyDetailPage } from "@/modules/patient/studies/PatientStudyDetailPage";
+
+export const patientRoutes: RouteObject = {
+  path: "patient",
+  element: <RoleGuard allowedRoles={["patient"]} />,
+  children: [
+    {
+      element: <PatientLayout />,
+      children: [
+        { index: true, element: <PatientDashboardPage /> },
+        { path: "professionals", element: <PatientProfessionalsPage /> },
+        { path: "professionals/:professionalId", element: <PatientProfessionalDetailPage /> },
+        {
+          path: "professionals/:professionalId/records/:recordId",
+          element: <PatientProfessionalRecordDetailPage />,
+        },
+        { path: "health", element: <PatientHealthPage /> },
+        { path: "health/:sectionId", element: <PatientHealthDetailPage /> },
+        { path: "studies/:studyId", element: <PatientStudyDetailPage /> },
+        { path: "prescriptions/:prescriptionId", element: <PatientPrescriptionDetailPage /> },
+        { path: "profile", element: <PatientProfilePage /> },
+        { path: "settings", element: <PatientSettingsPage /> },
+      ],
+    },
+  ],
+};
