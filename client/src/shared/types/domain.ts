@@ -29,6 +29,8 @@ export interface StudyItem {
   status: "Disponible" | "Pendiente" | "Vencido";
   reportSummary: string;
   images: string[];
+  notes?: string;
+  fileUrl?: string;
 }
 
 export interface PrescriptionItem {
@@ -37,6 +39,15 @@ export interface PrescriptionItem {
   professionalName: string;
   date: string;
   dose: string;
+  diagnosis?: string;
+  instructions?: string;
+  validUntil?: string;
+  medications?: {
+    name: string;
+    dose: string;
+    frequency?: string;
+    duration?: string;
+  }[];
 }
 
 export interface HealthSection {
@@ -60,6 +71,10 @@ export interface PatientListItem {
   studiesCount: number;
   reportsCount: number;
   imagesCount: number;
+  email?: string;
+  appointmentsCount?: number;
+  prescriptionsCount?: number;
+  lastAppointmentStatus?: string;
 }
 
 export interface OfficeItem {
@@ -98,4 +113,23 @@ export interface AgendaDay {
   officeId: string;
   freeSlots: string[];
   bookedSlots: ScheduleEvent[];
+}
+
+export interface MedicalRecordItem {
+  id: string;
+  title: string;
+  summary: string;
+  timestamp: string;
+  body: string;
+  diagnosis: string;
+  treatment: string;
+  notes: string;
+  professionalName?: string;
+  vitalSigns?: {
+    bloodPressure?: string;
+    heartRate?: number;
+    temperature?: number;
+    weight?: number;
+    height?: number;
+  };
 }

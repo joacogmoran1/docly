@@ -1,74 +1,72 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getProfessionalPrescriptionsMock } from "@/mocks/docly-api";
+import { useAuth } from "@/app/providers/AuthProvider";
+import { getProfessionalPatients } from "@/modules/professional/api/professional.api";
+import { getProfessionalPrescriptions } from "@/modules/prescriptions/api/prescriptions.api";
+import { mapPrescriptionToItem } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
+import { PrescriptionDetailView } from "@/shared/components/PrescriptionDetailView";
 import { Card } from "@/shared/ui/Card";
-import { Input } from "@/shared/ui/Input";
 import { Select } from "@/shared/ui/Select";
-import { Button } from "@/shared/ui/Button";
-
-const recipeTypeOptions = [
-  { value: "medicacion", label: "Medicacion" },
-  { value: "estudio", label: "Estudio" },
-  { value: "kinesiologia", label: "Kinesiologia" },
-  { value: "laboratorio", label: "Laboratorio" },
-  { value: "internacion", label: "Internacion domiciliaria" },
-];
 
 export function ProfessionalPrescriptionsPage() {
-  const [recipeType, setRecipeType] = useState("medicacion");
+  const { user } = useAuth();
+  const professionalId = user?.professionalId ?? "";
+  const [patientId, setPatientId] = useState("all");
   const query = useQuery({
-    queryKey: queryKeys.professionalPrescriptions,
-    queryFn: getProfessionalPrescriptionsMock,
+    queryKey: [...queryKeys.professionalPrescriptions, professionalId, patientId],
+    queryFn: () =>
+      getProfessionalPrescriptions(professionalId, {
+        patientId: patientId === "all" ? undefined : patientId,
+      }),
+    enabled: Boolean(professionalId),
+  });
+  const patientsQuery = useQuery({
+    queryKey: [...queryKeys.professionalPatients, professionalId, "selector"],
+    queryFn: () => getProfessionalPatients(professionalId),
+    enabled: Boolean(professionalId),
   });
 
-  const patientOptions = (query.data?.patients ?? []).map((patient) => ({
+  const patientOptions = (patientsQuery.data ?? []).map((patient) => ({
     value: patient.id,
     label: patient.fullName,
   }));
 
-  if (query.isLoading) return <div className="centered-feedback">Cargando recetas...</div>;
-  if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar recetas.</div>;
+  if (query.isLoading || patientsQuery.isLoading) {
+    return <div className="centered-feedback">Cargando recetas...</div>;
+  }
+  if (query.isError || patientsQuery.isError || !query.data) {
+    return <div className="centered-feedback">No pudimos cargar recetas.</div>;
+  }
 
   return (
     <div className="page-stack">
-      <Card title="Nueva receta" className="panel-separated">
+      <Card title="Recetas emitidas" className="panel-separated">
         <div className="minimal-form">
-          <Select label="Paciente" options={patientOptions} defaultValue={patientOptions[0]?.value} />
           <Select
-            label="Tipo de receta"
-            options={recipeTypeOptions}
-            value={recipeType}
-            onChange={(event) => setRecipeType(event.target.value)}
+            label="Paciente"
+            options={[{ value: "all", label: "Todos los pacientes" }, ...patientOptions]}
+            value={patientId}
+            onChange={(event) => setPatientId(event.target.value)}
           />
-          {recipeType === "medicacion" ? (
-            <>
-              <Input label="Medicacion" placeholder="Ej. Losartan 50 mg" />
-              <Input label="Dosis" placeholder="Ej. 1 comprimido cada 24 hs" />
-              <Input label="Duracion" placeholder="Ej. 30 dias" />
-            </>
-          ) : null}
-          {recipeType === "estudio" || recipeType === "laboratorio" ? (
-            <>
-              <Input label="Prestacion" placeholder="Ej. Ecografia abdominal" />
-              <Input label="Indicacion" placeholder="Motivo o detalle del pedido" />
-            </>
-          ) : null}
-          {recipeType === "kinesiologia" ? (
-            <>
-              <Input label="Tipo de sesion" placeholder="Ej. Rehabilitacion lumbar" />
-              <Input label="Cantidad de sesiones" placeholder="Ej. 10" />
-            </>
-          ) : null}
-          {recipeType === "internacion" ? (
-            <>
-              <Input label="Servicio" placeholder="Ej. Cuidados domiciliarios" />
-              <Input label="Frecuencia" placeholder="Ej. 2 veces por semana" />
-            </>
-          ) : null}
-          <Button>Crear receta</Button>
         </div>
       </Card>
+
+      <div className="page-stack">
+        {query.data.length ? (
+          query.data.map((prescription) => (
+            <PrescriptionDetailView
+              key={prescription.id}
+              prescription={mapPrescriptionToItem(prescription)}
+            />
+          ))
+        ) : (
+          <div className="panel">
+            <strong>Sin recetas</strong>
+            <p className="meta">Todavia no hay recetas emitidas para este filtro.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

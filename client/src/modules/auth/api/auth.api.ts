@@ -7,9 +7,11 @@ import type {
   ApiMessageResponse,
 } from "@/shared/types/api";
 import type {
+  ChangePasswordFormValues,
   ForgotPasswordFormValues,
   LoginFormValues,
   RegisterFormValues,
+  ResetPasswordFormValues,
 } from "@/modules/auth/types/auth-forms";
 
 function splitFullName(fullName: string) {
@@ -76,5 +78,45 @@ export async function logout() {
 }
 
 export async function requestPasswordReset(_values: ForgotPasswordFormValues) {
-  throw new Error("El backend actual no expone recuperacion de contrasena.");
+  try {
+    const response = await apiClient.post<ApiMessageResponse>("/auth/forgot-password", {
+      email: _values.email,
+    });
+
+    return {
+      message: response.data.message,
+      resetToken: response.data.resetToken,
+      resetLink: response.data.resetLink,
+    };
+  } catch (error) {
+    throw new Error(
+      getApiErrorMessage(error, "No se pudo iniciar la recuperacion de contrasena."),
+    );
+  }
+}
+
+export async function resetPassword(token: string, values: ResetPasswordFormValues) {
+  try {
+    const response = await apiClient.post<ApiMessageResponse>("/auth/reset-password", {
+      token,
+      password: values.password,
+    });
+
+    return response.data.message;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo restablecer la contrasena."));
+  }
+}
+
+export async function changePassword(values: ChangePasswordFormValues) {
+  try {
+    const response = await apiClient.post<ApiMessageResponse>("/auth/change-password", {
+      currentPassword: values.currentPassword,
+      newPassword: values.newPassword,
+    });
+
+    return response.data.message;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo cambiar la contrasena."));
+  }
 }

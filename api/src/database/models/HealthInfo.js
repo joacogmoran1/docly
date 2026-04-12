@@ -19,17 +19,17 @@ const HealthInfo = db.define('HealthInfo', {
 	diseases: {
 		type: DataTypes.ARRAY(DataTypes.STRING),
 		defaultValue: [],
+		comment: 'Enfermedades del paciente',
 	},
 	allergies: {
 		type: DataTypes.ARRAY(DataTypes.STRING),
 		defaultValue: [],
+		comment: 'Alergias del paciente',
 	},
 	medications: {
 		type: DataTypes.ARRAY(DataTypes.STRING),
 		defaultValue: [],
-	},
-	notes: {
-		type: DataTypes.TEXT,
+		comment: 'Medicación habitual del paciente',
 	},
 });
 

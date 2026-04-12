@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { getProfessionalPatientDetailMock } from "@/mocks/docly-api";
+import { useAuth } from "@/app/providers/AuthProvider";
+import { getProfessionalPatientDetail } from "@/modules/professional/api/professional.api";
 import { ConsultationRecordComposer } from "@/modules/professional/patients/ConsultationRecordComposer";
 import { PrescriptionComposer } from "@/modules/professional/prescriptions/PrescriptionComposer";
 import { queryKeys } from "@/shared/constants/query-keys";
@@ -10,16 +11,19 @@ import { Card } from "@/shared/ui/Card";
 import { Button } from "@/shared/ui/Button";
 
 export function ProfessionalPatientDetailPage() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { patientId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(searchParams.get("tab") ?? "profile");
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
   const [isCreatingPrescription, setIsCreatingPrescription] = useState(false);
+  const professionalId = user?.professionalId ?? "";
 
   const query = useQuery({
-    queryKey: queryKeys.professionalPatientDetail(patientId),
-    queryFn: () => getProfessionalPatientDetailMock(patientId),
+    queryKey: [...queryKeys.professionalPatientDetail(patientId), professionalId],
+    queryFn: () => getProfessionalPatientDetail(professionalId, patientId),
+    enabled: Boolean(patientId && professionalId),
   });
 
   if (query.isLoading) return <div className="centered-feedback">Cargando ficha...</div>;
@@ -55,11 +59,11 @@ export function ProfessionalPatientDetailPage() {
           <Card title="Datos personales" className="panel-separated">
             <div className="plain-list">
               <div className="list-row"><span className="meta">Nombre</span><strong>{query.data.profile.fullName}</strong></div>
-              <div className="list-row"><span className="meta">Documento</span><strong>{query.data.profile.document}</strong></div>
-              <div className="list-row"><span className="meta">Nacimiento</span><strong>{query.data.profile.birthDate}</strong></div>
+              <div className="list-row"><span className="meta">Nacimiento</span><strong>{query.data.profile.birthDate || "Sin fecha cargada"}</strong></div>
               <div className="list-row"><span className="meta">Email</span><strong>{query.data.profile.email}</strong></div>
-              <div className="list-row"><span className="meta">Telefono</span><strong>{query.data.profile.phone}</strong></div>
-              <div className="list-row"><span className="meta">Cobertura</span><strong>{query.data.profile.coverage}</strong></div>
+              <div className="list-row"><span className="meta">Telefono</span><strong>{query.data.profile.phone || "Sin telefono"}</strong></div>
+              <div className="list-row"><span className="meta">Cobertura</span><strong>{query.data.profile.coverage || "Sin cobertura"}</strong></div>
+              <div className="list-row"><span className="meta">Numero de cobertura</span><strong>{query.data.profile.coverageNumber || "Sin numero"}</strong></div>
             </div>
           </Card>
 
@@ -85,7 +89,12 @@ export function ProfessionalPatientDetailPage() {
         <div className="page-stack">
           {isCreatingRecord ? (
             <Card title="Crear registro" className="panel-separated">
-              <ConsultationRecordComposer onCancel={() => setIsCreatingRecord(false)} />
+              <ConsultationRecordComposer
+                patientId={patientId}
+                professionalId={professionalId}
+                onCancel={() => setIsCreatingRecord(false)}
+                onSuccess={() => setIsCreatingRecord(false)}
+              />
             </Card>
           ) : (
             <Card
@@ -109,6 +118,7 @@ export function ProfessionalPatientDetailPage() {
                     </Link>
                   </div>
                 ))}
+                {!query.data.records.length ? <span className="meta">Todavia no hay registros.</span> : null}
               </div>
             </Card>
           )}
@@ -132,6 +142,7 @@ export function ProfessionalPatientDetailPage() {
                 </Link>
               </div>
             ))}
+            {!query.data.studies.length ? <span className="meta">Todavia no hay estudios.</span> : null}
           </div>
         </Card>
       ),
@@ -144,8 +155,11 @@ export function ProfessionalPatientDetailPage() {
           {isCreatingPrescription ? (
             <Card title="Crear receta" className="panel-separated">
               <PrescriptionComposer
+                patientId={patientId}
+                professionalId={professionalId}
                 patientName={query.data.profile.fullName}
                 onCancel={() => setIsCreatingPrescription(false)}
+                onSuccess={() => setIsCreatingPrescription(false)}
               />
             </Card>
           ) : (
@@ -170,6 +184,7 @@ export function ProfessionalPatientDetailPage() {
                     </Link>
                   </div>
                 ))}
+                {!query.data.prescriptions.length ? <span className="meta">Todavia no hay recetas.</span> : null}
               </div>
             </Card>
           )}

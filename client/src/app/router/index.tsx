@@ -9,6 +9,10 @@ export const router = createBrowserRouter([
     path: "/",
     element: <Navigate to="/auth/login" replace />,
   },
+  {
+    path: "/reset-password",
+    element: <Navigate to="/auth/reset-password" replace />,
+  },
   authRoutes,
   {
     element: <AuthGuard />,

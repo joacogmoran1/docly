@@ -3,6 +3,8 @@ import type { Role } from "@/shared/types/auth";
 export interface ApiMessageResponse {
   success: boolean;
   message: string;
+  resetToken?: string;
+  resetLink?: string;
 }
 
 export interface ApiUserSummary {
@@ -195,4 +197,137 @@ export interface ApiAppointmentListResponse {
   success: boolean;
   results: number;
   data: ApiAppointment[];
+}
+
+export interface ApiPrescriptionMedication {
+  name: string;
+  dose: string;
+  frequency?: string | null;
+  duration?: string | null;
+}
+
+export interface ApiPrescription {
+  id: string;
+  patientId: string;
+  professionalId: string;
+  medications: ApiPrescriptionMedication[];
+  diagnosis: string | null;
+  instructions: string | null;
+  validUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+  patient?: ApiAppointmentParty;
+  professional?: ApiAppointmentParty;
+}
+
+export interface ApiPrescriptionResponse {
+  success: boolean;
+  data: ApiPrescription;
+}
+
+export interface ApiPrescriptionListResponse {
+  success: boolean;
+  results: number;
+  data: ApiPrescription[];
+}
+
+export interface ApiStudy {
+  id: string;
+  patientId: string;
+  professionalId: string | null;
+  type: string;
+  date: string;
+  results: string | null;
+  fileUrl: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  patient?: ApiAppointmentParty;
+  professional?: ApiAppointmentParty | null;
+}
+
+export interface ApiStudyResponse {
+  success: boolean;
+  data: ApiStudy;
+}
+
+export interface ApiStudyListResponse {
+  success: boolean;
+  results: number;
+  data: ApiStudy[];
+}
+
+export interface ApiVitalSigns {
+  bloodPressure?: string | null;
+  heartRate?: number | null;
+  temperature?: number | null;
+  weight?: number | null;
+  height?: number | null;
+}
+
+export interface ApiMedicalRecord {
+  id: string;
+  patientId: string;
+  professionalId: string;
+  appointmentId: string | null;
+  date: string;
+  diagnosis: string;
+  treatment: string | null;
+  notes: string | null;
+  vitalSigns: ApiVitalSigns;
+  createdAt: string;
+  updatedAt: string;
+  patient?: ApiAppointmentParty;
+  professional?: ApiAppointmentParty & {
+    user?: ApiUserSummary & {
+      specialty?: string | null;
+    };
+  };
+  appointment?: {
+    id: string;
+    date: string;
+    time: string;
+  } | null;
+}
+
+export interface ApiMedicalRecordResponse {
+  success: boolean;
+  data: ApiMedicalRecord;
+}
+
+export interface ApiMedicalRecordListResponse {
+  success: boolean;
+  results: number;
+  data: ApiMedicalRecord[];
+}
+
+export interface ApiProfessionalPatientStats {
+  totalAppointments: number;
+  totalRecords: number;
+  totalPrescriptions: number;
+  lastAppointmentDate: string | null;
+  lastAppointmentStatus: ApiAppointmentStatus | null;
+}
+
+export interface ApiProfessionalPatientListItem extends ApiPatientProfile {
+  stats: ApiProfessionalPatientStats;
+}
+
+export interface ApiProfessionalPatientListResponse {
+  success: boolean;
+  results: number;
+  data: ApiProfessionalPatientListItem[];
+}
+
+export interface ApiProfessionalPatientDetail extends ApiPatientProfile {
+  healthInfo: ApiHealthInfo | null;
+  medicalRecords: ApiMedicalRecord[];
+  prescriptions: ApiPrescription[];
+  studies: ApiStudy[];
+  appointments: ApiAppointment[];
+}
+
+export interface ApiProfessionalPatientDetailResponse {
+  success: boolean;
+  data: ApiProfessionalPatientDetail;
 }

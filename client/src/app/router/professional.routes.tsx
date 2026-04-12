@@ -11,6 +11,7 @@ import { ProfessionalPatientRecordDetailPage } from "@/modules/professional/pati
 import { ProfessionalPatientStudyDetailPage } from "@/modules/professional/patients/ProfessionalPatientStudyDetailPage";
 import { ProfessionalPatientsPage } from "@/modules/professional/patients/ProfessionalPatientsPage";
 import { ProfessionalConsultationRecordPage } from "@/modules/professional/patients/ProfessionalConsultationRecordPage";
+import { ProfessionalPrescriptionsPage } from "@/modules/professional/prescriptions/ProfessionalPrescriptionsPage";
 import { ProfessionalProfilePage } from "@/modules/professional/profile/ProfessionalProfilePage";
 import { ProfessionalSchedulePage } from "@/modules/professional/schedule/ProfessionalSchedulePage";
 import { ProfessionalSettingsPage } from "@/modules/professional/settings/ProfessionalSettingsPage";
@@ -42,6 +43,7 @@ export const professionalRoutes: RouteObject = {
         },
         { path: "offices", element: <ProfessionalOfficesPage /> },
         { path: "offices/:officeId", element: <ProfessionalOfficeDetailPage /> },
+        { path: "prescriptions", element: <ProfessionalPrescriptionsPage /> },
         { path: "schedule", element: <ProfessionalSchedulePage /> },
         { path: "profile", element: <ProfessionalProfilePage /> },
         { path: "settings", element: <ProfessionalSettingsPage /> },

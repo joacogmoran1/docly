@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { useAuth } from "@/app/providers/AuthProvider";
 import { getPatientProfessionalDetail } from "@/modules/patient/api/patient.api";
 import { buildAgendaFromSchedules } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
@@ -19,6 +20,7 @@ function getToday() {
 }
 
 export function PatientProfessionalDetailPage() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { professionalId = "" } = useParams();
   const today = getToday();
@@ -27,6 +29,7 @@ export function PatientProfessionalDetailPage() {
   const [selectedDate, setSelectedDate] = useState(today);
   const [displayMonth, setDisplayMonth] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1));
   const [tab, setTab] = useState("agenda");
+  const patientId = user?.patientId;
   const query = useQuery({
     queryKey: [...queryKeys.patientProfessionalDetail(professionalId), displayMonth.getFullYear(), displayMonth.getMonth()],
     queryFn: () =>
@@ -34,6 +37,7 @@ export function PatientProfessionalDetailPage() {
         professionalId,
         displayMonth.getFullYear(),
         displayMonth.getMonth(),
+        patientId,
       ),
     enabled: Boolean(professionalId),
   });
@@ -107,7 +111,7 @@ export function PatientProfessionalDetailPage() {
               />
             </section>
             <AgendaDayPanel
-              title="Agenda del profesional"
+              title="Turnos del dia"
               dateLabel={formatNumericDate(selectedDate)}
               items={dayItems}
               mode="patient"
@@ -117,49 +121,49 @@ export function PatientProfessionalDetailPage() {
       ),
     },
     {
-      value: "info",
-      label: "Informacion",
+      value: "records",
+      label: "Registros",
       content: (
-        <Card title="Perfil profesional" className="panel-separated">
+        <Card title="Registros" className="panel-separated">
           <div className="plain-list">
-            <div className="list-row">
-              <div className="stack-sm">
-                <strong>Nombre</strong>
-                <span className="meta">
-                  {[professional.user.name, professional.user.lastName].filter(Boolean).join(" ")}
-                </span>
+            {query.data.records.map((item) => (
+              <div key={item.id} className="list-row">
+                <div className="stack-sm">
+                  <strong>{item.title}</strong>
+                  <span className="meta">{item.summary}</span>
+                </div>
+                <Link to={`/patient/professionals/${professionalId}/records/${item.id}`}>
+                  <Button variant="ghost">Ver</Button>
+                </Link>
               </div>
-            </div>
-            <div className="list-row">
-              <div className="stack-sm">
-                <strong>Especialidad</strong>
-                <span className="meta">{professional.specialty}</span>
+            ))}
+            {!query.data.records.length ? (
+              <span className="meta">Todavia no hay registros con este profesional.</span>
+            ) : null}
+          </div>
+        </Card>
+      ),
+    },
+    {
+      value: "prescriptions",
+      label: "Recetas",
+      content: (
+        <Card title="Recetas descargables" className="panel-separated">
+          <div className="plain-list">
+            {query.data.prescriptions.map((item) => (
+              <div key={item.id} className="list-row">
+                <div className="stack-sm">
+                  <strong>{item.medication}</strong>
+                  <span className="meta">{item.dose}</span>
+                </div>
+                <Link to={`/patient/prescriptions/${item.id}`}>
+                  <Button variant="ghost">Ver</Button>
+                </Link>
               </div>
-            </div>
-            <div className="list-row">
-              <div className="stack-sm">
-                <strong>Matricula</strong>
-                <span className="meta">{professional.licenseNumber}</span>
-              </div>
-            </div>
-            <div className="list-row">
-              <div className="stack-sm">
-                <strong>Coberturas</strong>
-                <span className="meta">
-                  {professional.acceptedCoverages.length
-                    ? professional.acceptedCoverages.join(", ")
-                    : "Sin coberturas cargadas"}
-                </span>
-              </div>
-            </div>
-            <div className="list-row">
-              <div className="stack-sm">
-                <strong>Honorarios</strong>
-                <span className="meta">
-                  {professional.fees ? `$${professional.fees}` : "A confirmar"}
-                </span>
-              </div>
-            </div>
+            ))}
+            {!query.data.prescriptions.length ? (
+              <span className="meta">Todavia no hay recetas emitidas por este profesional.</span>
+            ) : null}
           </div>
         </Card>
       ),

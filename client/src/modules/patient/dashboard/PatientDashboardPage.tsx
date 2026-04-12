@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { getPatientDashboard } from "@/modules/patient/api/patient.api";
 import { cancelAppointment } from "@/modules/appointments/api/appointments.api";
 import { useAuth } from "@/app/providers/AuthProvider";
@@ -107,12 +108,25 @@ export function PatientDashboardPage() {
       {section === "prescriptions" ? (
         <section className="page-stack">
           <h2 className="title-md">Recetas</h2>
-          <div className="panel">
-            <strong>Modulo pendiente</strong>
-            <p className="meta">
-              La documentacion del backend que me pasaste no incluye endpoints de recetas,
-              asi que esta seccion sigue pendiente de integracion real.
-            </p>
+          <div className="dashboard-plain-list">
+            {query.data.prescriptions.length ? (
+              query.data.prescriptions.map((item) => (
+                <ListEntry
+                  key={item.id}
+                  title={item.medication}
+                  action={
+                    <Link to={`/patient/prescriptions/${item.id}`}>
+                      <Button variant="ghost">Ver receta</Button>
+                    </Link>
+                  }
+                >
+                  <span className="slot-entry-meta">{item.professionalName}</span>
+                  <span className="slot-entry-meta">{item.dose || "Sin detalle de dosis"}</span>
+                </ListEntry>
+              ))
+            ) : (
+              <span className="meta">Todavia no hay recetas registradas.</span>
+            )}
           </div>
         </section>
       ) : null}
@@ -120,12 +134,25 @@ export function PatientDashboardPage() {
       {section === "studies" ? (
         <section className="page-stack">
           <h2 className="title-md">Estudios</h2>
-          <div className="panel">
-            <strong>Modulo pendiente</strong>
-            <p className="meta">
-              La API documentada todavia no expone estudios, por eso esta vista queda
-              desacoplada del backend por ahora.
-            </p>
+          <div className="dashboard-plain-list">
+            {query.data.studies.length ? (
+              query.data.studies.map((item) => (
+                <ListEntry
+                  key={item.id}
+                  title={item.title}
+                  action={
+                    <Link to={`/patient/studies/${item.id}`}>
+                      <Button variant="ghost">Abrir estudio</Button>
+                    </Link>
+                  }
+                >
+                  <span className="slot-entry-meta">{item.requestedBy}</span>
+                  <span className="slot-entry-meta">{item.reportSummary}</span>
+                </ListEntry>
+              ))
+            ) : (
+              <span className="meta">Todavia no hay estudios registrados.</span>
+            )}
           </div>
         </section>
       ) : null}

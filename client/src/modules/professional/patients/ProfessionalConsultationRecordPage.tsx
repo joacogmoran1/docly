@@ -1,14 +1,13 @@
-import { useNavigate } from "react-router-dom";
-import { ConsultationRecordComposer } from "@/modules/professional/patients/ConsultationRecordComposer";
 import { Card } from "@/shared/ui/Card";
 
 export function ProfessionalConsultationRecordPage() {
-  const navigate = useNavigate();
-
   return (
     <div className="page-stack">
       <Card title="Crear registro" className="panel-separated">
-        <ConsultationRecordComposer onCancel={() => navigate(-1)} />
+        <p className="meta">
+          Para crear un registro medico necesitas abrir primero la ficha de un paciente y
+          usar la accion "Crear registro" desde esa vista.
+        </p>
       </Card>
     </div>
   );

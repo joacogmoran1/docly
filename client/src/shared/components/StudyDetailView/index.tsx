@@ -1,5 +1,4 @@
 import type { StudyItem } from "@/shared/types/domain";
-import { Button } from "@/shared/ui/Button";
 import { Card } from "@/shared/ui/Card";
 import { formatNumericDate } from "@/shared/utils/date";
 
@@ -29,7 +28,9 @@ export function StudyDetailView({ study }: StudyDetailViewProps) {
             {study.images.map((image) => (
               <div key={image} className="list-row">
                 <span>{image}</span>
-                <Button variant="ghost">Abrir</Button>
+                <a href={image} target="_blank" rel="noreferrer" className="helper-text">
+                  Abrir archivo
+                </a>
               </div>
             ))}
           </div>
@@ -37,7 +38,15 @@ export function StudyDetailView({ study }: StudyDetailViewProps) {
       ) : null}
 
       <Card title={study.images.length ? "Informe" : "Resultados"} className="panel-separated">
-        <p className="meta">{study.reportSummary}</p>
+        <div className="stack-md">
+          <p className="meta">{study.reportSummary}</p>
+          {study.notes ? (
+            <div className="stack-sm">
+              <span className="meta">Notas</span>
+              <p className="meta">{study.notes}</p>
+            </div>
+          ) : null}
+        </div>
       </Card>
     </>
   );

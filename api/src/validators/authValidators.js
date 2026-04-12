@@ -33,3 +33,12 @@ export const changePasswordValidator = [
 		.matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
 		.withMessage('La nueva contraseña debe contener al menos una mayúscula, una minúscula y un número'),
 ];
+
+export const changeEmailValidator = [
+	body('newEmail').isEmail().withMessage('Email inválido'),
+	body('password').notEmpty().withMessage('La contraseña es requerida'),
+];
+
+export const deleteAccountValidator = [
+	body('password').notEmpty().withMessage('La contraseña es requerida para eliminar la cuenta'),
+];

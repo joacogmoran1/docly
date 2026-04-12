@@ -1,89 +1,88 @@
-// src/services/patientService.js
 import { Patient, HealthInfo, User } from '../database/models/index.js';
 import ApiError from '../utils/ApiError.js';
 
 class PatientService {
-  async getProfile(patientId) {
-    const patient = await Patient.findByPk(patientId, {
-      include: [
-        {
-          association: 'user',
-          attributes: ['id', 'email', 'name', 'lastName', 'phone'],
-        },
-        { association: 'healthInfo' },
-      ],
-    });
+	async getProfile(patientId) {
+		const patient = await Patient.findByPk(patientId, {
+			include: [
+				{
+					association: 'user',
+					attributes: ['id', 'email', 'name', 'lastName', 'phone'],
+				},
+				{ association: 'healthInfo' },
+			],
+		});
 
-    if (!patient) {
-      throw new ApiError(404, 'Paciente no encontrado.');
-    }
+		if (!patient) {
+			throw new ApiError(404, 'Paciente no encontrado.');
+		}
 
-    return patient;
-  }
+		return patient;
+	}
 
-  async updateProfile(patientId, updateData) {
-    const patient = await Patient.findByPk(patientId);
-    
-    if (!patient) {
-      throw new ApiError(404, 'Paciente no encontrado.');
-    }
+	async updateProfile(patientId, updateData) {
+		const patient = await Patient.findByPk(patientId);
 
-    // Actualizar datos del paciente
-    const { birthDate, gender, bloodType, medicalCoverage, coverageNumber } = updateData;
-    
-    await patient.update({
-      birthDate,
-      gender,
-      bloodType,
-      medicalCoverage,
-      coverageNumber,
-    });
+		if (!patient) {
+			throw new ApiError(404, 'Paciente no encontrado.');
+		}
 
-    // Si hay datos del usuario (nombre, teléfono, etc.)
-    if (updateData.name || updateData.lastName || updateData.phone) {
-      await User.update(
-        {
-          name: updateData.name,
-          lastName: updateData.lastName,
-          phone: updateData.phone,
-        },
-        { where: { id: patient.userId } }
-      );
-    }
+		// Actualizar datos del paciente
+		const { dni, birthDate, gender, bloodType, medicalCoverage, coverageNumber } = updateData;
 
-    return await this.getProfile(patientId);
-  }
+		await patient.update({
+			dni,
+			birthDate,
+			gender,
+			bloodType,
+			medicalCoverage,
+			coverageNumber,
+		});
 
-  async getHealthInfo(patientId) {
-    let healthInfo = await HealthInfo.findOne({ where: { patientId } });
+		// Si hay datos del usuario (nombre, teléfono, etc.)
+		if (updateData.name || updateData.lastName || updateData.phone) {
+			await User.update(
+				{
+					name: updateData.name,
+					lastName: updateData.lastName,
+					phone: updateData.phone,
+				},
+				{ where: { id: patient.userId } }
+			);
+		}
 
-    // Si no existe, crear uno vacío
-    if (!healthInfo) {
-      healthInfo = await HealthInfo.create({ patientId });
-    }
+		return await this.getProfile(patientId);
+	}
 
-    return healthInfo;
-  }
+	async getHealthInfo(patientId) {
+		let healthInfo = await HealthInfo.findOne({ where: { patientId } });
 
-  async updateHealthInfo(patientId, healthData) {
-    const { diseases, allergies, medications, notes } = healthData;
+		// Si no existe, crear uno vacío
+		if (!healthInfo) {
+			healthInfo = await HealthInfo.create({ patientId });
+		}
 
-    let healthInfo = await HealthInfo.findOne({ where: { patientId } });
+		return healthInfo;
+	}
 
-    if (healthInfo) {
-      await healthInfo.update({ diseases, allergies, medications, notes });
-    } else {
-      healthInfo = await HealthInfo.create({
-        patientId,
-        diseases,
-        allergies,
-        medications,
-        notes,
-      });
-    }
+	async updateHealthInfo(patientId, healthData) {
+		const { diseases, allergies, medications } = healthData;
 
-    return healthInfo;
-  }
+		let healthInfo = await HealthInfo.findOne({ where: { patientId } });
+
+		if (healthInfo) {
+			await healthInfo.update({ diseases, allergies, medications });
+		} else {
+			healthInfo = await HealthInfo.create({
+				patientId,
+				diseases,
+				allergies,
+				medications,
+			});
+		}
+
+		return healthInfo;
+	}
 }
 
 export default new PatientService();

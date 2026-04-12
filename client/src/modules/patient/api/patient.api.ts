@@ -2,11 +2,17 @@ import { apiClient } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/errors";
 import {
   mapHealthInfoToSections,
+  mapMedicalRecordToItem,
   mapPatientAppointmentsToItems,
   mapPatientProfileToView,
+  mapPrescriptionToItem,
   mapProfessionalToCard,
+  mapStudyToItem,
 } from "@/services/api/mappers";
 import { getPatientAppointments, getProfessionalAppointments } from "@/modules/appointments/api/appointments.api";
+import { getPatientMedicalRecords } from "@/modules/medical-records/api/medical-records.api";
+import { getPatientPrescriptions } from "@/modules/prescriptions/api/prescriptions.api";
+import { getPatientStudies } from "@/modules/studies/api/studies.api";
 import type {
   ApiAppointment,
   ApiHealthInfoResponse,
@@ -68,12 +74,39 @@ export async function getPatientHealthSections(patientId: string) {
 }
 
 export async function getPatientDashboard(patientId: string) {
-  const appointments = await getPatientAppointments(patientId);
+  const [appointments, prescriptions, studies] = await Promise.all([
+    getPatientAppointments(patientId),
+    getPatientPrescriptions(patientId, { valid: true }),
+    getPatientStudies(patientId),
+  ]);
 
   return {
     appointments: mapPatientAppointmentsToItems(appointments),
-    prescriptions: [],
-    studies: [],
+    prescriptions: prescriptions.map((item) => ({
+      id: item.id,
+      medication: item.medications[0]?.name ?? "Receta",
+      professionalName: [
+        item.professional?.user?.name ?? "Profesional",
+        item.professional?.user?.lastName,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      date: item.createdAt,
+      dose: [item.medications[0]?.dose, item.medications[0]?.frequency]
+        .filter(Boolean)
+        .join(" | "),
+    })),
+    studies: studies.map((item) => ({
+      id: item.id,
+      title: item.type,
+      requestedBy: item.professional?.user
+        ? [item.professional.user.name, item.professional.user.lastName]
+            .filter(Boolean)
+            .join(" ")
+        : "Paciente",
+      date: item.date,
+      reportSummary: item.results || item.notes || "Sin resultados cargados.",
+    })),
   };
 }
 
@@ -133,22 +166,35 @@ export async function getPatientProfessionalDetail(
   professionalId: string,
   year: number,
   month: number,
+  patientId?: string,
 ) {
   try {
     const professionalResponse = await apiClient.get<ApiProfessionalProfileResponse>(
       `/professionals/${professionalId}`,
     );
-    let appointments: ApiAppointment[] = [];
-
-    try {
-      appointments = await getProfessionalAppointments(professionalId);
-    } catch {
-      appointments = [];
-    }
+    const appointmentsPromise = getProfessionalAppointments(professionalId).catch(() => [] as ApiAppointment[]);
+    const recordsPromise = patientId
+      ? getPatientMedicalRecords(patientId, { professionalId }).catch(() => [])
+      : Promise.resolve([]);
+    const studiesPromise = patientId
+      ? getPatientStudies(patientId, { professionalId }).catch(() => [])
+      : Promise.resolve([]);
+    const prescriptionsPromise = patientId
+      ? getPatientPrescriptions(patientId, { professionalId }).catch(() => [])
+      : Promise.resolve([]);
+    const [appointments, records, studies, prescriptions] = await Promise.all([
+      appointmentsPromise,
+      recordsPromise,
+      studiesPromise,
+      prescriptionsPromise,
+    ]);
 
     return {
       professional: professionalResponse.data.data,
       appointments,
+      records: records.map(mapMedicalRecordToItem),
+      studies: studies.map(mapStudyToItem),
+      prescriptions: prescriptions.map(mapPrescriptionToItem),
       year,
       month,
     };

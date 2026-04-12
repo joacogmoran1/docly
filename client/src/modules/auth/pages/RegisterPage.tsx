@@ -15,6 +15,7 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const { register: registerUser } = useAuth();
   const [step, setStep] = useState(0);
+  const [createdRole, setCreatedRole] = useState<"patient" | "professional" | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -29,6 +30,7 @@ export function RegisterPage() {
       fullName: "",
       email: "",
       phone: "",
+      document: "",
       specialty: "",
       license: "",
       password: "",
@@ -43,8 +45,8 @@ export function RegisterPage() {
     if (step === 0) return ["role", "fullName", "email"] as const;
     if (step === 1) {
       return role === "professional"
-        ? (["phone", "specialty", "license"] as const)
-        : (["phone"] as const);
+        ? (["phone", "document", "specialty", "license"] as const)
+        : (["phone", "document"] as const);
     }
     return ["password", "confirmPassword", "acceptedTerms"] as const;
   }, [role, step]);
@@ -53,9 +55,8 @@ export function RegisterPage() {
     try {
       setServerError(null);
       const user = await registerUser(values);
-      navigate(user.role === "patient" ? "/patient" : "/professional", {
-        replace: true,
-      });
+      setCreatedRole(user.role);
+      setStep(3);
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "No se pudo crear la cuenta.");
     }
@@ -86,7 +87,7 @@ export function RegisterPage() {
       </div>
 
       <div className="stepper auth-stepper">
-        {steps.map((label, index) => (
+        {[...steps, "Confirmar"].map((label, index) => (
           <span key={label} className={`step-pill${index === step ? " active" : ""}`}>
             {index + 1}. {label}
           </span>
@@ -127,6 +128,12 @@ export function RegisterPage() {
               placeholder="+54 11 ..."
               error={errors.phone?.message}
               {...register("phone")}
+            />
+            <Input
+              label="Documento"
+              placeholder="DNI / documento"
+              error={errors.document?.message}
+              {...register("document")}
             />
             {role === "professional" ? (
               <>
@@ -171,23 +178,43 @@ export function RegisterPage() {
           </>
         ) : null}
 
+        {step === 3 ? (
+          <div className="auth-confirmation-minimal">
+            <strong className="title-md">Cuenta creada</strong>
+            <p className="meta">Tu cuenta ya esta lista para empezar a usar Docly.</p>
+            <Button
+              type="button"
+              fullWidth
+              onClick={() =>
+                navigate(createdRole === "professional" ? "/professional" : "/patient", {
+                  replace: true,
+                })
+              }
+            >
+              Ir al inicio
+            </Button>
+          </div>
+        ) : null}
+
         {serverError ? <span className="field-error">{serverError}</span> : null}
 
-        <div className="form-actions auth-form-actions">
-          {step > 0 ? (
-            <Button type="button" variant="ghost" onClick={() => setStep((current) => current - 1)}>
-              Volver
-            </Button>
-          ) : null}
+        {step < 3 ? (
+          <div className="form-actions auth-form-actions">
+            {step > 0 ? (
+              <Button type="button" variant="ghost" onClick={() => setStep((current) => current - 1)}>
+                Volver
+              </Button>
+            ) : null}
 
-          <Button type="button" onClick={goNext} disabled={isSubmitting}>
-            {step === steps.length - 1
-              ? isSubmitting
-                ? "Creando cuenta..."
-                : "Crear cuenta"
-              : "Continuar"}
-          </Button>
-        </div>
+            <Button type="button" onClick={goNext} disabled={isSubmitting}>
+              {step === steps.length - 1
+                ? isSubmitting
+                  ? "Creando cuenta..."
+                  : "Crear cuenta"
+                : "Continuar"}
+            </Button>
+          </div>
+        ) : null}
       </form>
     </div>
   );

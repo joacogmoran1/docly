@@ -28,4 +28,10 @@ router.post('/reset-password', resetPasswordValidator, validate, authController.
 // Cambiar contraseña (requiere autenticación)
 router.post('/change-password', protect, changePasswordValidator, validate, authController.changePassword);
 
+// Cambiar email (requiere autenticación)
+router.put('/change-email', protect, changeEmailValidator, validate, authController.changeEmail);
+
+// Eliminar cuenta (requiere autenticación)
+router.delete('/account', protect, deleteAccountValidator, validate, authController.deleteAccount);
+
 export default router;

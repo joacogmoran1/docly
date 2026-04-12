@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createAppointment, getProfessionalAppointments } from "@/modules/appointments/api/appointments.api";
-import { getProfessionalOfficesData } from "@/modules/professional/api/professional.api";
-import { buildAgendaFromSchedules, mapAppointmentsToPatientOptions } from "@/services/api/mappers";
+import {
+  getProfessionalOfficesData,
+  getProfessionalPatients,
+} from "@/modules/professional/api/professional.api";
+import { buildAgendaFromSchedules } from "@/services/api/mappers";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { BookAppointmentModal } from "@/shared/components/BookAppointmentModal";
 import { AgendaDayPanel } from "@/shared/components/AgendaDayPanel";
@@ -38,6 +41,11 @@ export function ProfessionalSchedulePage() {
     queryFn: () => getProfessionalOfficesData(professionalId),
     enabled: Boolean(professionalId),
   });
+  const patientsQuery = useQuery({
+    queryKey: [...queryKeys.professionalPatients, professionalId, "schedule"],
+    queryFn: () => getProfessionalPatients(professionalId),
+    enabled: Boolean(professionalId),
+  });
 
   const agenda = useMemo(() => {
     if (!agendaQuery.data || !officesQuery.data) return [];
@@ -55,8 +63,13 @@ export function ProfessionalSchedulePage() {
     [agenda, officeFilter, selectedDate],
   );
   const patientOptions = useMemo(
-    () => mapAppointmentsToPatientOptions(agendaQuery.data ?? []),
-    [agendaQuery.data],
+    () =>
+      (patientsQuery.data ?? []).map((patient) => ({
+        id: patient.id,
+        fullName: patient.fullName,
+        meta: patient.email ?? patient.phone ?? patient.document,
+      })),
+    [patientsQuery.data],
   );
   const createAppointmentMutation = useMutation({
     mutationFn: (patientId: string) =>
@@ -74,12 +87,13 @@ export function ProfessionalSchedulePage() {
     },
   });
 
-  if (agendaQuery.isLoading || officesQuery.isLoading) {
+  if (agendaQuery.isLoading || officesQuery.isLoading || patientsQuery.isLoading) {
     return <div className="centered-feedback">Cargando agenda...</div>;
   }
   if (
     agendaQuery.isError ||
     officesQuery.isError ||
+    patientsQuery.isError ||
     !agendaQuery.data ||
     !officesQuery.data
   ) {

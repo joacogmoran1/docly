@@ -16,6 +16,12 @@ const Patient = db.define('Patient', {
 			key: 'id',
 		},
 	},
+	dni: {
+		type: DataTypes.STRING,
+		unique: true,
+		field: 'dni',
+		comment: 'Documento Nacional de Identidad',
+	},
 	birthDate: {
 		type: DataTypes.DATEONLY,
 		field: 'birth_date',

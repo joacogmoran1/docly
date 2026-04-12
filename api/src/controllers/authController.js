@@ -75,3 +75,26 @@ export const changePassword = catchAsync(async (req, res) => {
 		...result,
 	});
 });
+
+export const changeEmail = catchAsync(async (req, res) => {
+	const { newEmail, password } = req.body;
+	const result = await authService.changeEmail(req.user.id, newEmail, password);
+
+	res.status(200).json({
+		success: true,
+		...result,
+	});
+});
+
+export const deleteAccount = catchAsync(async (req, res) => {
+	const { password } = req.body;
+	const result = await authService.deleteAccount(req.user.id, password);
+
+	// Limpiar cookie
+	res.clearCookie('token');
+
+	res.status(200).json({
+		success: true,
+		...result,
+	});
+});

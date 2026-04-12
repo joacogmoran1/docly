@@ -4,16 +4,24 @@ import type {
   ApiAppointmentStatus,
   ApiAuthenticatedUser,
   ApiHealthInfo,
+  ApiMedicalRecord,
   ApiOffice,
+  ApiPrescription,
+  ApiProfessionalPatientListItem,
   ApiProfessionalProfile,
+  ApiStudy,
 } from "@/shared/types/api";
 import type {
   AgendaDay,
   AppointmentItem,
   HealthSection,
+  MedicalRecordItem,
   OfficeItem,
+  PatientListItem,
+  PrescriptionItem,
   ProfessionalCard,
   ScheduleEvent,
+  StudyItem,
 } from "@/shared/types/domain";
 import type { Permission, SessionUser } from "@/shared/types/auth";
 
@@ -51,6 +59,12 @@ export interface AppointmentPatientOption {
   id: string;
   fullName: string;
   meta: string;
+}
+
+export interface PasswordResetView {
+  message: string;
+  resetToken?: string;
+  resetLink?: string;
 }
 
 const weekdayLabels = ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado"];
@@ -377,4 +391,112 @@ export function mapAppointmentsToPatientOptions(appointments: ApiAppointment[]):
   return Array.from(registry.values()).sort((left, right) =>
     left.fullName.localeCompare(right.fullName),
   );
+}
+
+export function mapPrescriptionToItem(prescription: ApiPrescription): PrescriptionItem {
+  const primaryMedication = prescription.medications[0];
+  return {
+    id: prescription.id,
+    medication: primaryMedication?.name ?? "Receta",
+    professionalName: buildFullName(
+      prescription.professional?.user?.name ?? "Profesional",
+      prescription.professional?.user?.lastName,
+    ),
+    date: `${prescription.createdAt}`,
+    dose: [
+      primaryMedication?.dose,
+      primaryMedication?.frequency,
+      primaryMedication?.duration,
+    ]
+      .filter(Boolean)
+      .join(" | "),
+    diagnosis: safeText(prescription.diagnosis),
+    instructions: safeText(prescription.instructions),
+    validUntil: safeText(prescription.validUntil),
+    medications: prescription.medications.map((medication) => ({
+      name: medication.name,
+      dose: medication.dose,
+      frequency: safeText(medication.frequency),
+      duration: safeText(medication.duration),
+    })),
+  };
+}
+
+export function mapStudyToItem(study: ApiStudy): StudyItem {
+  const requestedBy = study.professional?.user
+    ? buildFullName(study.professional.user.name, study.professional.user.lastName)
+    : "Paciente";
+  const isAvailable = Boolean(study.fileUrl || study.results);
+
+  return {
+    id: study.id,
+    title: study.type,
+    category: "Estudio medico",
+    requestedBy,
+    date: study.date,
+    status: isAvailable ? "Disponible" : "Pendiente",
+    reportSummary: safeText(study.results || study.notes, "Sin resultados cargados."),
+    images: study.fileUrl ? [study.fileUrl] : [],
+    notes: safeText(study.notes),
+    fileUrl: safeText(study.fileUrl),
+  };
+}
+
+export function mapMedicalRecordToItem(record: ApiMedicalRecord): MedicalRecordItem {
+  const professionalName = record.professional?.user
+    ? buildFullName(record.professional.user.name, record.professional.user.lastName)
+    : undefined;
+
+  return {
+    id: record.id,
+    title: record.diagnosis.split(".")[0] || "Registro medico",
+    summary: safeText(record.treatment || record.notes, "Sin resumen cargado."),
+    timestamp: record.date,
+    body: [record.diagnosis, record.treatment, record.notes].filter(Boolean).join("\n\n"),
+    diagnosis: record.diagnosis,
+    treatment: safeText(record.treatment),
+    notes: safeText(record.notes),
+    professionalName,
+    vitalSigns: {
+      bloodPressure: safeText(record.vitalSigns?.bloodPressure),
+      heartRate: record.vitalSigns?.heartRate ?? undefined,
+      temperature: record.vitalSigns?.temperature ?? undefined,
+      weight: record.vitalSigns?.weight ?? undefined,
+      height: record.vitalSigns?.height ?? undefined,
+    },
+  };
+}
+
+export function mapProfessionalPatientsToListItems(
+  patients: ApiProfessionalPatientListItem[],
+): PatientListItem[] {
+  return patients.map((patient) => {
+    const birthDate = patient.birthDate ? new Date(patient.birthDate) : null;
+    const today = new Date();
+    const age =
+      birthDate
+        ? today.getFullYear() -
+          birthDate.getFullYear() -
+          (today < new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate()) ? 1 : 0)
+        : 0;
+
+    return {
+      id: patient.id,
+      fullName: buildFullName(patient.user.name, patient.user.lastName),
+      age: Number.isFinite(age) ? age : 0,
+      document: patient.user.email,
+      phone: safeText(patient.user.phone),
+      coverage: patient.medicalCoverage ?? "Sin cobertura",
+      lastVisit: patient.stats.lastAppointmentDate ?? "",
+      nextAppointment: "",
+      alerts: [],
+      studiesCount: 0,
+      reportsCount: patient.stats.totalRecords,
+      imagesCount: 0,
+      email: patient.user.email,
+      appointmentsCount: patient.stats.totalAppointments,
+      prescriptionsCount: patient.stats.totalPrescriptions,
+      lastAppointmentStatus: patient.stats.lastAppointmentStatus ?? undefined,
+    };
+  });
 }

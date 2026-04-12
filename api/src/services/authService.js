@@ -4,12 +4,29 @@ import PasswordResetToken from '../database/models/PasswordResetToken.js';
 import { jwtConfig } from '../config/jwt.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../utils/logger.js';
+import { mapToSessionUser } from '../utils/mappers.js';
+import { LoginResponse } from '../types/dtos.js';
 
 class AuthService {
 	generateToken(userId) {
 		return jwt.sign({ id: userId }, jwtConfig.secret, {
 			expiresIn: jwtConfig.expiresIn,
 		});
+	}
+
+	generateAuthTokens(userId) {
+		const accessToken = this.generateToken(userId);
+		const refreshToken = this.generateToken(userId); // En producción, usar token diferente
+		
+		// Calcular expiración (7 días por defecto)
+		const expiresAt = new Date();
+		expiresAt.setDate(expiresAt.getDate() + 7);
+
+		return {
+			accessToken,
+			refreshToken,
+			expiresAt: expiresAt.toISOString(),
+		};
 	}
 
 	async register(userData) {
@@ -62,12 +79,13 @@ class AuthService {
 			],
 		});
 
-		const token = this.generateToken(user.id);
+		const tokens = this.generateAuthTokens(user.id);
+		const sessionUser = mapToSessionUser(userWithRelations);
 
-		return { user: userWithRelations, token };
+		return { user: sessionUser, tokens };
 	}
 
-	async login(email, password) {
+	async login(email, password): Promise<LoginResponse> {
 		// Buscar usuario con relaciones
 		const user = await User.findOne({
 			where: { email },
@@ -94,9 +112,10 @@ class AuthService {
 			throw new ApiError(401, 'Credenciales incorrectas.');
 		}
 
-		const token = this.generateToken(user.id);
+		const tokens = this.generateAuthTokens(user.id);
+		const sessionUser = mapToSessionUser(user);
 
-		return { user, token };
+		return { user: sessionUser, tokens };
 	}
 
 	async getProfile(userId) {
@@ -117,7 +136,7 @@ class AuthService {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
-		return user;
+		return mapToSessionUser(user);
 	}
 
 	async forgotPassword(email) {
@@ -210,6 +229,61 @@ class AuthService {
 
 		return {
 			message: 'Contraseña cambiada exitosamente.',
+		};
+	}
+
+	async changeEmail(userId, newEmail, password) {
+		const user = await User.findByPk(userId);
+
+		if (!user) {
+			throw new ApiError(404, 'Usuario no encontrado.');
+		}
+
+		// Verificar contraseña actual
+		const isPasswordValid = await user.comparePassword(password);
+
+		if (!isPasswordValid) {
+			throw new ApiError(401, 'Contraseña incorrecta.');
+		}
+
+		// Verificar que el nuevo email no esté en uso
+		const existingUser = await User.findOne({ where: { email: newEmail } });
+
+		if (existingUser && existingUser.id !== userId) {
+			throw new ApiError(400, 'El email ya está en uso por otra cuenta.');
+		}
+
+		// Actualizar email
+		await user.update({ email: newEmail });
+
+		logger.info(`Email cambiado exitosamente para usuario ${user.id}`);
+
+		return {
+			message: 'Email actualizado exitosamente.',
+		};
+	}
+
+	async deleteAccount(userId, password) {
+		const user = await User.findByPk(userId);
+
+		if (!user) {
+			throw new ApiError(404, 'Usuario no encontrado.');
+		}
+
+		// Verificar contraseña
+		const isPasswordValid = await user.comparePassword(password);
+
+		if (!isPasswordValid) {
+			throw new ApiError(401, 'Contraseña incorrecta.');
+		}
+
+		// Desactivar cuenta en lugar de eliminarla (soft delete)
+		await user.update({ isActive: false });
+
+		logger.info(`Cuenta desactivada para usuario ${user.id}`);
+
+		return {
+			message: 'Cuenta eliminada exitosamente.',
 		};
 	}
 }

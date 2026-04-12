@@ -10,6 +10,9 @@ import { Input } from "@/shared/ui/Input";
 
 export function ForgotPasswordPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [resetLink, setResetLink] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -23,10 +26,16 @@ export function ForgotPasswordPage() {
   const onSubmit = handleSubmit(async (values) => {
     try {
       setServerError(null);
-      await requestPasswordReset(values);
+      const response = await requestPasswordReset(values);
+      setMessage(response.message);
+      setResetLink(response.resetLink ?? null);
+      setResetToken(response.resetToken ?? null);
       setSubmitted(true);
     } catch (error) {
       setSubmitted(false);
+      setMessage(null);
+      setResetLink(null);
+      setResetToken(null);
       setServerError(
         error instanceof Error ? error.message : "No se pudo iniciar la recuperacion.",
       );
@@ -39,7 +48,7 @@ export function ForgotPasswordPage() {
         <span className="eyebrow">Recuperacion segura</span>
         <h1 className="title-lg">Restablece tu contrasena</h1>
         <p className="meta">
-          La API documentada todavia no incluye recuperacion de contrasena, asi que esta vista queda informativa.
+          Ingresa tu email y el backend generara un enlace de recuperacion.
         </p>
       </div>
 
@@ -47,15 +56,22 @@ export function ForgotPasswordPage() {
         <Input
           label="Email"
           placeholder="nombre@correo.com"
+          type="email"
           error={errors.email?.message}
           {...register("email")}
         />
         {submitted ? (
           <div className="panel">
             <strong>Revisa tu correo</strong>
-            <p className="meta">
-              Si en el futuro el backend expone este flujo, desde aca podremos conectarlo.
-            </p>
+            <p className="meta">{message}</p>
+            {resetLink ? (
+              <a href={resetLink} className="helper-text">
+                Abrir enlace de reseteo
+              </a>
+            ) : null}
+            {resetToken ? (
+              <span className="helper-text">Token de desarrollo: {resetToken}</span>
+            ) : null}
           </div>
         ) : null}
         {serverError ? <span className="field-error">{serverError}</span> : null}
