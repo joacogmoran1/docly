@@ -9,12 +9,15 @@ import {
   mapProfessionalToCard,
   mapStudyToItem,
 } from "@/services/api/mappers";
-import { getPatientAppointments, getProfessionalAppointments } from "@/modules/appointments/api/appointments.api";
+import { getPatientAppointments } from "@/modules/appointments/api/appointments.api";
 import { getPatientMedicalRecords } from "@/modules/medical-records/api/medical-records.api";
 import { getPatientPrescriptions } from "@/modules/prescriptions/api/prescriptions.api";
 import { getPatientStudies } from "@/modules/studies/api/studies.api";
+import { getStudyTypeDefinition } from "@/shared/constants/medical-options";
 import type {
   ApiAppointment,
+  ApiAppointmentStatus,
+  ApiProfessionalAvailabilityResponse,
   ApiHealthInfoResponse,
   ApiPatientProfileResponse,
   ApiProfessionalListResponse,
@@ -36,6 +39,12 @@ interface UpdatePatientProfileInput {
   bloodType?: string;
   medicalCoverage?: string;
   coverageNumber?: string;
+}
+
+interface UpdatePatientHealthInput {
+  diseases?: string[];
+  allergies?: string[];
+  medications?: string[];
 }
 
 export async function getPatientProfile(patientId: string) {
@@ -73,6 +82,18 @@ export async function getPatientHealthSections(patientId: string) {
   return mapHealthInfoToSections(healthInfo);
 }
 
+export async function updatePatientHealthInfo(
+  patientId: string,
+  input: UpdatePatientHealthInput,
+) {
+  try {
+    const response = await apiClient.put<ApiHealthInfoResponse>(`/patients/${patientId}/health`, input);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo guardar la informacion de salud."));
+  }
+}
+
 export async function getPatientDashboard(patientId: string) {
   const [appointments, prescriptions, studies] = await Promise.all([
     getPatientAppointments(patientId),
@@ -105,7 +126,10 @@ export async function getPatientDashboard(patientId: string) {
             .join(" ")
         : "Paciente",
       date: item.date,
-      reportSummary: item.results || item.notes || "Sin resultados cargados.",
+      reportSummary:
+        getStudyTypeDefinition(item.type).attachmentKind === "image"
+          ? "Informe PDF e imagenes del estudio."
+          : "Informe PDF y resultados del estudio.",
     })),
   };
 }
@@ -172,7 +196,19 @@ export async function getPatientProfessionalDetail(
     const professionalResponse = await apiClient.get<ApiProfessionalProfileResponse>(
       `/professionals/${professionalId}`,
     );
-    const appointmentsPromise = getProfessionalAppointments(professionalId).catch(() => [] as ApiAppointment[]);
+    const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      new Date(year, month + 1, 0).getDate(),
+    ).padStart(2, "0")}`;
+    const availabilityPromise = apiClient
+      .get<ApiProfessionalAvailabilityResponse>(`/professionals/${professionalId}/availability`, {
+        params: {
+          startDate: monthStart,
+          endDate: monthEnd,
+        },
+      })
+      .then((response) => response.data.data)
+      .catch(() => null);
     const recordsPromise = patientId
       ? getPatientMedicalRecords(patientId, { professionalId }).catch(() => [])
       : Promise.resolve([]);
@@ -182,16 +218,35 @@ export async function getPatientProfessionalDetail(
     const prescriptionsPromise = patientId
       ? getPatientPrescriptions(patientId, { professionalId }).catch(() => [])
       : Promise.resolve([]);
-    const [appointments, records, studies, prescriptions] = await Promise.all([
-      appointmentsPromise,
+    const [availability, records, studies, prescriptions] = await Promise.all([
+      availabilityPromise,
       recordsPromise,
       studiesPromise,
       prescriptionsPromise,
     ]);
 
+    const availabilityAppointments: ApiAppointment[] =
+      availability?.appointments.map((appointment) => ({
+        id: appointment.id,
+        patientId: "",
+        professionalId,
+        officeId: appointment.officeId,
+        date: appointment.date,
+        time: appointment.time,
+        duration: appointment.duration,
+        status: "pending" as ApiAppointmentStatus,
+        reason: null,
+        notes: null,
+        cancellationReason: null,
+        createdAt: "",
+        updatedAt: "",
+      })) ?? [];
+
     return {
       professional: professionalResponse.data.data,
-      appointments,
+      agendaOffices: availability?.offices ?? professionalResponse.data.data.offices ?? [],
+      appointments: availabilityAppointments,
+      blocks: availability?.blocks ?? [],
       records: records.map(mapMedicalRecordToItem),
       studies: studies.map(mapStudyToItem),
       prescriptions: prescriptions.map(mapPrescriptionToItem),

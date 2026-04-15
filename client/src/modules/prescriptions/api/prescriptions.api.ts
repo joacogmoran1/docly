@@ -26,6 +26,39 @@ interface CreatePrescriptionInput {
   validUntil?: string;
 }
 
+interface UpdatePrescriptionInput {
+  medications?: ApiPrescriptionMedication[];
+  diagnosis?: string;
+  instructions?: string;
+  validUntil?: string;
+}
+
+interface DownloadPrescriptionPdfResult {
+  blob: Blob;
+  filename: string;
+}
+
+function getFilenameFromDisposition(
+  disposition: string | undefined,
+  fallback: string,
+) {
+  if (!disposition) {
+    return fallback;
+  }
+
+  const utf8Match = disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]).replace(/["']/g, "");
+  }
+
+  const simpleMatch = disposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+  if (simpleMatch?.[1]) {
+    return simpleMatch[1];
+  }
+
+  return fallback;
+}
+
 export async function getPrescription(id: string) {
   try {
     const response = await apiClient.get<ApiPrescriptionResponse>(`/prescriptions/${id}`);
@@ -91,5 +124,58 @@ export async function createPrescription(input: CreatePrescriptionInput) {
     return response.data.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, "No se pudo crear la receta."));
+  }
+}
+
+export async function updatePrescription(id: string, input: UpdatePrescriptionInput) {
+  try {
+    const response = await apiClient.put<ApiPrescriptionResponse>(`/prescriptions/${id}`, input);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo actualizar la receta."));
+  }
+}
+
+export async function deletePrescription(id: string) {
+  try {
+    await apiClient.delete(`/prescriptions/${id}`);
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo eliminar la receta."));
+  }
+}
+
+export async function downloadPrescriptionPdf(id: string): Promise<DownloadPrescriptionPdfResult> {
+  try {
+    const response = await apiClient.get<Blob>(`/prescriptions/${id}/download`, {
+      responseType: "blob",
+      headers: {
+        Accept: "application/pdf",
+      },
+    });
+    const contentType = response.headers["content-type"];
+
+    if (typeof contentType === "string" && contentType.includes("application/json")) {
+      const rawText = await response.data.text();
+      let message = rawText || "No se pudo descargar la receta en PDF.";
+
+      try {
+        const payload = JSON.parse(rawText) as { message?: string };
+        message = payload.message || message;
+      } catch {
+        // Si el blob no es JSON valido, usamos el texto crudo como mensaje.
+      }
+
+      throw new Error(message);
+    }
+
+    return {
+      blob: response.data,
+      filename: getFilenameFromDisposition(
+        response.headers["content-disposition"],
+        `receta-${id}.pdf`,
+      ),
+    };
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo descargar la receta en PDF."));
   }
 }

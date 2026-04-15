@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SearchBar } from "@/shared/components/SearchBar";
 import { Modal } from "@/shared/ui/Modal";
 import { Select } from "@/shared/ui/Select";
@@ -41,6 +41,24 @@ export function BookAppointmentModal({
     label: `${patient.fullName} - ${patient.meta}`,
   }));
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    if (!options.length) {
+      if (patientId) {
+        setPatientId("");
+      }
+      return;
+    }
+
+    const hasSelectedOption = options.some((option) => option.value === patientId);
+    if (!hasSelectedOption) {
+      setPatientId(options[0]?.value ?? "");
+    }
+  }, [isOpen, options, patientId]);
+
   const handleClose = () => {
     setSearch("");
     setPatientId("");
@@ -59,8 +77,13 @@ export function BookAppointmentModal({
         <SearchBar placeholder="Buscar paciente" value={search} onChange={setSearch} />
         <Select
           label="Paciente"
-          options={options}
+          options={
+            options.length
+              ? options
+              : [{ value: "", label: "No hay pacientes disponibles" }]
+          }
           value={patientId}
+          disabled={!options.length || isSubmitting}
           onChange={(event) => setPatientId(event.target.value)}
         />
         <div className="form-actions">

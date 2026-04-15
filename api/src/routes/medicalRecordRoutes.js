@@ -1,27 +1,40 @@
 import express from 'express';
 import * as medicalRecordController from '../controllers/medicalRecordController.js';
 import { protect, restrictTo } from '../middleware/auth.js';
+import { validate } from '../middleware/validation.js';
+import {
+    createMedicalRecordValidator,
+    updateMedicalRecordValidator,
+} from '../validators/medicalRecordValidators.js';
 
 const router = express.Router();
 
 router.use(protect);
 
-// Crear registro médico (solo profesionales)
-router.post('/', restrictTo('professional'), medicalRecordController.create);
+// Crear (solo profesionales, con validación)
+router.post(
+    '/',
+    restrictTo('professional'),
+    createMedicalRecordValidator,
+    validate,
+    medicalRecordController.create
+);
 
-// Obtener registro por ID
+// Leer
 router.get('/:id', medicalRecordController.getById);
-
-// Obtener registros de un paciente
 router.get('/patient/:patientId', medicalRecordController.getByPatient);
-
-// Obtener registros de un profesional
 router.get('/professional/:professionalId', medicalRecordController.getByProfessional);
 
-// Actualizar registro (solo profesionales)
-router.put('/:id', restrictTo('professional'), medicalRecordController.update);
+// Actualizar (solo profesionales, con validación)
+router.put(
+    '/:id',
+    restrictTo('professional'),
+    updateMedicalRecordValidator,
+    validate,
+    medicalRecordController.update
+);
 
-// Eliminar registro (solo profesionales)
+// Eliminar (solo profesionales)
 router.delete('/:id', restrictTo('professional'), medicalRecordController.deleteRecord);
 
 export default router;

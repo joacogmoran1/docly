@@ -1,27 +1,51 @@
 import express from 'express';
 import * as prescriptionController from '../controllers/prescriptionController.js';
 import { protect, restrictTo } from '../middleware/auth.js';
+import { validate } from '../middleware/validation.js';
+import {
+    createPrescriptionValidator,
+    updatePrescriptionValidator,
+} from '../validators/prescriptionValidators.js';
 
 const router = express.Router();
 
 router.use(protect);
 
-// Crear receta (solo profesionales)
-router.post('/', restrictTo('professional'), prescriptionController.create);
+// ── Crear (solo profesionales, con validación) ──────────────────────────
+router.post(
+    '/',
+    restrictTo('professional'),
+    createPrescriptionValidator,
+    validate,
+    prescriptionController.create
+);
 
-// Obtener receta por ID
+// ── Leer por ID (paciente dueño o profesional emisor) ───────────────────
 router.get('/:id', prescriptionController.getById);
 
-// Obtener recetas de un paciente
+// ── Descargar PDF (paciente dueño o profesional emisor) ─────────────────
+router.get('/:id/download', prescriptionController.download);
+
+// ── Leer por paciente (ese paciente o profesional vinculado) ────────────
 router.get('/patient/:patientId', prescriptionController.getByPatient);
 
-// Obtener recetas de un profesional
+// ── Leer por profesional (solo ese profesional) ─────────────────────────
 router.get('/professional/:professionalId', prescriptionController.getByProfessional);
 
-// Actualizar receta (solo profesionales)
-router.put('/:id', restrictTo('professional'), prescriptionController.update);
+// ── Actualizar (solo profesional emisor, con validación) ────────────────
+router.put(
+    '/:id',
+    restrictTo('professional'),
+    updatePrescriptionValidator,
+    validate,
+    prescriptionController.update
+);
 
-// Eliminar receta (solo profesionales)
-router.delete('/:id', restrictTo('professional'), prescriptionController.deletePrescription);
+// ── Eliminar (solo profesional emisor) ──────────────────────────────────
+router.delete(
+    '/:id',
+    restrictTo('professional'),
+    prescriptionController.deletePrescription
+);
 
 export default router;

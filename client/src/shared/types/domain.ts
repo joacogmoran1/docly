@@ -16,7 +16,7 @@ export interface AppointmentItem {
   specialty: string;
   date: string;
   office: string;
-  status: "Confirmado" | "Pendiente" | "Cancelado";
+  status: "Confirmado" | "Pendiente" | "Cancelado" | "Completado";
   type: "Presencial" | "Virtual";
 }
 
@@ -31,6 +31,9 @@ export interface StudyItem {
   images: string[];
   notes?: string;
   fileUrl?: string;
+  reportUrl?: string;
+  attachmentKind?: "pdf" | "image";
+  attachmentUrls?: string[];
 }
 
 export interface PrescriptionItem {
@@ -104,15 +107,29 @@ export interface ScheduleEvent {
   patientName: string;
   officeName: string;
   date: string;
-  status: "Confirmado" | "Pendiente" | "Cancelado" | "Bloqueado";
+  status: "Confirmado" | "Pendiente" | "Cancelado" | "Completado" | "Bloqueado";
   reason: string;
+}
+
+export interface BlockedScheduleSlot {
+  id: string;
+  blockId: string;
+  time: string;
+  officeId: string;
+  officeName?: string;
+  reason?: string;
 }
 
 export interface AgendaDay {
   date: string;
   officeId: string;
+  officeName?: string;
   freeSlots: string[];
   bookedSlots: ScheduleEvent[];
+  blockedSlots?: BlockedScheduleSlot[];
+  fullDayBlocked?: boolean;
+  fullDayBlockId?: string;
+  fullDayBlockReason?: string;
 }
 
 export interface MedicalRecordItem {
@@ -121,6 +138,7 @@ export interface MedicalRecordItem {
   summary: string;
   timestamp: string;
   body: string;
+  reason: string;
   diagnosis: string;
   treatment: string;
   notes: string;

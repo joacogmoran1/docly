@@ -1,130 +1,71 @@
-import { Office, Schedule, Appointment } from '../database/models/index.js';
+import { Office, Schedule, Appointment, OfficeBlock } from '../database/models/index.js';
 import db from '../config/database.js';
+import ApiError from '../utils/ApiError.js';
+import logger from '../utils/logger.js';
 
 class OfficeService {
-    /**
-     * Crear consultorio con schedules
-     */
     async create(data) {
         const { schedule, ...officeData } = data;
-
-        // Iniciar transacción
         const transaction = await db.transaction();
 
         try {
-            // 1. Crear office
             const office = await Office.create(officeData, { transaction });
 
-            console.log('✅ Office creado:', office.id);
-
-            // 2. Crear schedules si existen
             if (schedule && Array.isArray(schedule) && schedule.length > 0) {
                 const schedulesToCreate = schedule.map(s => ({
                     officeId: office.id,
                     dayOfWeek: s.dayOfWeek,
                     startTime: s.startTime,
                     endTime: s.endTime,
-                    isActive: s.isActive !== false, // Default true
+                    isActive: s.isActive !== false,
                 }));
-
                 await Schedule.bulkCreate(schedulesToCreate, { transaction });
-
-                console.log('✅ Schedules creados:', schedulesToCreate.length);
             }
 
-            // 3. Commit transaction
             await transaction.commit();
 
-            // 4. Retornar office con schedules
-            const officeWithSchedules = await Office.findByPk(office.id, {
-                include: [
-                    {
-                        model: Schedule,
-                        as: 'schedules',
-                        order: [['dayOfWeek', 'ASC']],
-                    },
-                ],
-            });
-
-            return officeWithSchedules;
+            return await this._findWithSchedules(office.id);
         } catch (error) {
-            await transaction.rollback();
-            console.error('❌ Error creando office:', error);
+            if (!transaction.finished) await transaction.rollback();
+            logger.error(`Error creando office: ${error.message}`, { stack: error.stack });
             throw error;
         }
     }
 
-    /**
-     * Obtener consultorio por ID con schedules
-     */
     async getById(id) {
-        const office = await Office.findByPk(id, {
-            include: [
-                {
-                    model: Schedule,
-                    as: 'schedules',
-                    order: [['dayOfWeek', 'ASC']],
-                },
-            ],
-        });
-
+        const office = await this._findWithSchedules(id);
+        if (!office) throw new ApiError(404, 'Consultorio no encontrado.');
         return office;
     }
 
-    /**
-     * Obtener consultorios de un profesional
-     */
     async getByProfessional(professionalId) {
-        const offices = await Office.findAll({
+        return await Office.findAll({
             where: { professionalId },
-            include: [
-                {
-                    model: Schedule,
-                    as: 'schedules',
-                    order: [['dayOfWeek', 'ASC']],
-                },
-            ],
+            include: [{
+                model: Schedule,
+                as: 'schedules',
+                order: [['dayOfWeek', 'ASC']],
+            }],
             order: [['createdAt', 'DESC']],
         });
-
-        return offices;
     }
 
-    /**
-     * Actualizar consultorio y schedules
-     */
     async update(id, data) {
         const { schedule, ...officeData } = data;
-
-        // Iniciar transacción
         const transaction = await db.transaction();
 
         try {
-            // 1. Actualizar datos del office
             const office = await Office.findByPk(id);
-
             if (!office) {
-                throw new Error('Consultorio no encontrado');
+                await transaction.rollback();
+                throw new ApiError(404, 'Consultorio no encontrado.');
             }
 
             await office.update(officeData, { transaction });
 
-            console.log('✅ Office actualizado:', office.id);
-
-            // 2. Actualizar schedules si se enviaron
             if (schedule && Array.isArray(schedule)) {
-                // ESTRATEGIA: Eliminar todos los schedules existentes y crear los nuevos
-                // Esto es más simple y evita conflictos
+                await Schedule.destroy({ where: { officeId: id }, transaction });
 
-                // 2.1 Eliminar schedules existentes
-                await Schedule.destroy({
-                    where: { officeId: id },
-                    transaction,
-                });
-
-                console.log('🗑️ Schedules antiguos eliminados');
-
-                // 2.2 Crear nuevos schedules
                 if (schedule.length > 0) {
                     const schedulesToCreate = schedule.map(s => ({
                         officeId: id,
@@ -133,79 +74,53 @@ class OfficeService {
                         endTime: s.endTime,
                         isActive: s.isActive !== false,
                     }));
-
                     await Schedule.bulkCreate(schedulesToCreate, { transaction });
-
-                    console.log('✅ Schedules nuevos creados:', schedulesToCreate.length);
                 }
             }
 
-            // 3. Commit transaction
             await transaction.commit();
-
-            // 4. Retornar office actualizado con schedules
-            const officeWithSchedules = await Office.findByPk(id, {
-                include: [
-                    {
-                        model: Schedule,
-                        as: 'schedules',
-                        order: [['dayOfWeek', 'ASC']],
-                    },
-                ],
-            });
-
-            return officeWithSchedules;
+            return await this._findWithSchedules(id);
         } catch (error) {
-            await transaction.rollback();
-            console.error('❌ Error actualizando office:', error);
+            if (!transaction.finished) await transaction.rollback();
+            logger.error(`Error actualizando office: ${error.message}`, { stack: error.stack });
             throw error;
         }
     }
 
-    /**
-     * Eliminar consultorio (cascade delete)
-     */
     async delete(id) {
-        // Iniciar transacción
         const transaction = await db.transaction();
 
         try {
             const office = await Office.findByPk(id);
-
             if (!office) {
-                throw new Error('Consultorio no encontrado');
+                await transaction.rollback();
+                throw new ApiError(404, 'Consultorio no encontrado.');
             }
 
-            // 1. Eliminar appointments (si el modelo no tiene cascade)
-            const deletedAppointments = await Appointment.destroy({
-                where: { officeId: id },
-                transaction,
-            });
-
-            console.log('🗑️ Appointments eliminados:', deletedAppointments);
-
-            // 2. Eliminar schedules (si el modelo no tiene cascade)
-            const deletedSchedules = await Schedule.destroy({
-                where: { officeId: id },
-                transaction,
-            });
-
-            console.log('🗑️ Schedules eliminados:', deletedSchedules);
-
-            // 3. Eliminar office
+            await Appointment.destroy({ where: { officeId: id }, transaction });
+            await Schedule.destroy({ where: { officeId: id }, transaction });
+            await OfficeBlock.destroy({ where: { officeId: id }, transaction });
             await office.destroy({ transaction });
 
-            console.log('🗑️ Office eliminado:', id);
-
-            // 4. Commit transaction
             await transaction.commit();
-
+            logger.info(`Office ${id} eliminado con datos asociados`);
             return { success: true };
         } catch (error) {
-            await transaction.rollback();
-            console.error('❌ Error eliminando office:', error);
+            if (!transaction.finished) await transaction.rollback();
+            logger.error(`Error eliminando office: ${error.message}`, { stack: error.stack });
             throw error;
         }
+    }
+
+    // Helper reutilizable
+    async _findWithSchedules(id) {
+        return await Office.findByPk(id, {
+            include: [{
+                model: Schedule,
+                as: 'schedules',
+                order: [['dayOfWeek', 'ASC']],
+            }],
+        });
     }
 }
 

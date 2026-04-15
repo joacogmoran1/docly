@@ -18,7 +18,11 @@ const Patient = db.define('Patient', {
 	},
 	dni: {
 		type: DataTypes.STRING,
-		unique: true,
+		// ✅ FIX: Removido `unique: true` de acá.
+		// Sequelize + sync({ alter: true }) genera SQL inválido:
+		//   ALTER COLUMN "dni" TYPE VARCHAR(255) UNIQUE
+		// PostgreSQL no acepta UNIQUE dentro de ALTER COLUMN TYPE.
+		// La constraint se define abajo en `indexes`.
 		field: 'dni',
 		comment: 'Documento Nacional de Identidad',
 	},
@@ -41,6 +45,14 @@ const Patient = db.define('Patient', {
 		type: DataTypes.STRING,
 		field: 'coverage_number',
 	},
+}, {
+	indexes: [
+		{
+			unique: true,
+			fields: ['dni'],
+			name: 'patients_dni_unique',
+		},
+	],
 });
 
 export default Patient;

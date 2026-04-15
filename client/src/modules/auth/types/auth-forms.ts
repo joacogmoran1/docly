@@ -19,9 +19,15 @@ export interface ChangePasswordFormValues {
   confirmPassword: string;
 }
 
+export interface ChangeEmailFormValues {
+  email: string;
+  password: string;
+}
+
 export interface RegisterFormValues {
   role: "patient" | "professional";
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   document?: string;

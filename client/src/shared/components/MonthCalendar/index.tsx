@@ -15,6 +15,7 @@ interface MonthCalendarProps {
   onNextMonth?: () => void;
   onGoToday?: () => void;
   canGoPrevious?: boolean;
+  minDate?: string;
   centerContent?: ReactNode;
 }
 
@@ -29,6 +30,7 @@ export function MonthCalendar({
   onNextMonth,
   onGoToday,
   canGoPrevious = true,
+  minDate,
   centerContent,
 }: MonthCalendarProps) {
   const cells = buildMonthCells(year, month, agenda, officeId);
@@ -91,14 +93,15 @@ export function MonthCalendar({
       <div className="month-grid-body">
         {cells.map((cell) => {
           const hasAttention = cell.bookedCount > 0 || cell.freeCount > 0;
+          const isDisabled = !cell.date || Boolean(minDate && cell.date < minDate);
 
           return (
             <button
               key={cell.key}
               type="button"
-              className={`day-cell${cell.date === selectedDate ? " is-selected" : ""}${!cell.isCurrentMonth ? " is-muted" : ""}`}
-              onClick={() => cell.date && onSelectDate(cell.date)}
-              disabled={!cell.date}
+              className={`day-cell${cell.date === selectedDate ? " is-selected" : ""}${!cell.isCurrentMonth ? " is-muted" : ""}${isDisabled ? " is-disabled" : ""}`}
+              onClick={() => cell.date && !isDisabled && onSelectDate(cell.date)}
+              disabled={isDisabled}
             >
               <span className="day-number">{cell.dayNumber ?? ""}</span>
               {cell.date && hasAttention ? (

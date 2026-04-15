@@ -4,8 +4,6 @@ import PasswordResetToken from '../database/models/PasswordResetToken.js';
 import { jwtConfig } from '../config/jwt.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../utils/logger.js';
-import { mapToSessionUser } from '../utils/mappers.js';
-import { LoginResponse } from '../types/dtos.js';
 
 class AuthService {
 	generateToken(userId) {
@@ -14,19 +12,13 @@ class AuthService {
 		});
 	}
 
-	generateAuthTokens(userId) {
-		const accessToken = this.generateToken(userId);
-		const refreshToken = this.generateToken(userId); // En producción, usar token diferente
-		
-		// Calcular expiración (7 días por defecto)
-		const expiresAt = new Date();
-		expiresAt.setDate(expiresAt.getDate() + 7);
-
-		return {
-			accessToken,
-			refreshToken,
-			expiresAt: expiresAt.toISOString(),
-		};
+	// Refresh token con expiración más larga y payload diferenciado
+	generateRefreshToken(userId) {
+		return jwt.sign(
+			{ id: userId, type: 'refresh' },
+			jwtConfig.secret,
+			{ expiresIn: '30d' }
+		);
 	}
 
 	async register(userData) {
@@ -68,36 +60,26 @@ class AuthService {
 		// Recargar usuario con relaciones
 		const userWithRelations = await User.findByPk(user.id, {
 			include: [
-				{
-					association: 'professional',
-					required: false,
-				},
-				{
-					association: 'patient',
-					required: false,
-				},
+				{ association: 'professional', required: false },
+				{ association: 'patient', required: false },
 			],
 		});
 
-		const tokens = this.generateAuthTokens(user.id);
-		const sessionUser = mapToSessionUser(userWithRelations);
+		// Retornar token como string (lo que espera el controller)
+		const token = this.generateToken(user.id);
+		const authenticatedUser = userWithRelations?.toJSON() || user.toJSON();
 
-		return { user: sessionUser, tokens };
+		return { user: authenticatedUser, token };
 	}
 
-	async login(email, password): Promise<LoginResponse> {
+	// Removida la anotación TypeScript `: Promise<LoginResponse>`
+	async login(email, password) {
 		// Buscar usuario con relaciones
 		const user = await User.findOne({
 			where: { email },
 			include: [
-				{
-					association: 'professional',
-					required: false,
-				},
-				{
-					association: 'patient',
-					required: false,
-				},
+				{ association: 'professional', required: false },
+				{ association: 'patient', required: false },
 			],
 		});
 
@@ -112,23 +94,18 @@ class AuthService {
 			throw new ApiError(401, 'Credenciales incorrectas.');
 		}
 
-		const tokens = this.generateAuthTokens(user.id);
-		const sessionUser = mapToSessionUser(user);
+		// Retornar token como string (lo que espera el controller)
+		const token = this.generateToken(user.id);
+		const authenticatedUser = user.toJSON();
 
-		return { user: sessionUser, tokens };
+		return { user: authenticatedUser, token };
 	}
 
 	async getProfile(userId) {
 		const user = await User.findByPk(userId, {
 			include: [
-				{
-					association: 'professional',
-					required: false,
-				},
-				{
-					association: 'patient',
-					required: false,
-				},
+				{ association: 'professional', required: false },
+				{ association: 'patient', required: false },
 			],
 		});
 
@@ -136,7 +113,7 @@ class AuthService {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
-		return mapToSessionUser(user);
+		return user.toJSON();
 	}
 
 	async forgotPassword(email) {
@@ -154,8 +131,7 @@ class AuthService {
 		const resetToken = await PasswordResetToken.createForUser(user.id);
 
 		// En producción, aquí se enviaría un email con el link
-		// Para desarrollo, devolvemos el token
-		logger.info(`Token de reseteo generado para usuario ${user.id}: ${resetToken.token}`);
+		logger.info(`Token de reseteo generado para usuario ${user.id}`);
 
 		// TODO: Implementar envío de email
 		// await emailService.sendPasswordResetEmail(user.email, resetToken.token);
@@ -163,7 +139,7 @@ class AuthService {
 		return {
 			message: 'Si el email existe, recibirás un enlace de reseteo.',
 			// Solo en desarrollo:
-			...(process.env.NODE_ENV === 'development' && { 
+			...(process.env.NODE_ENV === 'development' && {
 				resetToken: resetToken.token,
 				resetLink: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken.token}`,
 			}),
@@ -173,10 +149,7 @@ class AuthService {
 	async resetPassword(token, newPassword) {
 		// Buscar token válido
 		const resetToken = await PasswordResetToken.findOne({
-			where: {
-				token,
-				used: false,
-			},
+			where: { token, used: false },
 		});
 
 		if (!resetToken) {
@@ -195,17 +168,12 @@ class AuthService {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
-		// El hook beforeUpdate de User hasheará la contraseña
 		await user.update({ password: newPassword });
-
-		// Marcar token como usado
 		await resetToken.update({ used: true });
 
 		logger.info(`Contraseña reseteada exitosamente para usuario ${user.id}`);
 
-		return {
-			message: 'Contraseña actualizada exitosamente.',
-		};
+		return { message: 'Contraseña actualizada exitosamente.' };
 	}
 
 	async changePassword(userId, currentPassword, newPassword) {
@@ -215,21 +183,17 @@ class AuthService {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
-		// Verificar contraseña actual
 		const isPasswordValid = await user.comparePassword(currentPassword);
 
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Contraseña actual incorrecta.');
 		}
 
-		// Actualizar contraseña
 		await user.update({ password: newPassword });
 
 		logger.info(`Contraseña cambiada exitosamente para usuario ${user.id}`);
 
-		return {
-			message: 'Contraseña cambiada exitosamente.',
-		};
+		return { message: 'Contraseña cambiada exitosamente.' };
 	}
 
 	async changeEmail(userId, newEmail, password) {
@@ -239,28 +203,23 @@ class AuthService {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
-		// Verificar contraseña actual
 		const isPasswordValid = await user.comparePassword(password);
 
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Contraseña incorrecta.');
 		}
 
-		// Verificar que el nuevo email no esté en uso
 		const existingUser = await User.findOne({ where: { email: newEmail } });
 
 		if (existingUser && existingUser.id !== userId) {
 			throw new ApiError(400, 'El email ya está en uso por otra cuenta.');
 		}
 
-		// Actualizar email
 		await user.update({ email: newEmail });
 
 		logger.info(`Email cambiado exitosamente para usuario ${user.id}`);
 
-		return {
-			message: 'Email actualizado exitosamente.',
-		};
+		return { message: 'Email actualizado exitosamente.' };
 	}
 
 	async deleteAccount(userId, password) {
@@ -270,21 +229,18 @@ class AuthService {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
-		// Verificar contraseña
 		const isPasswordValid = await user.comparePassword(password);
 
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Contraseña incorrecta.');
 		}
 
-		// Desactivar cuenta en lugar de eliminarla (soft delete)
+		// Soft delete
 		await user.update({ isActive: false });
 
 		logger.info(`Cuenta desactivada para usuario ${user.id}`);
 
-		return {
-			message: 'Cuenta eliminada exitosamente.',
-		};
+		return { message: 'Cuenta eliminada exitosamente.' };
 	}
 }
 

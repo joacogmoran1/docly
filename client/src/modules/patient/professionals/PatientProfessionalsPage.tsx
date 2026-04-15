@@ -162,7 +162,7 @@ export function PatientProfessionalsPage() {
                   {professional.isInTeam ? "Quitar" : "Agregar"}
                 </Button>
                 <Link to={`/patient/professionals/${professional.id}`}>
-                  <Button className="button-inline">Agenda</Button>
+                  <Button className="button-inline">Ver</Button>
                 </Link>
               </>
             }

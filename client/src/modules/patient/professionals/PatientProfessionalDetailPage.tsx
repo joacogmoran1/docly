@@ -1,34 +1,121 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/app/providers/AuthProvider";
+import { createAppointment } from "@/modules/appointments/api/appointments.api";
 import { getPatientProfessionalDetail } from "@/modules/patient/api/patient.api";
 import { buildAgendaFromSchedules } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { MonthCalendar } from "@/shared/components/MonthCalendar";
 import { AgendaDayPanel } from "@/shared/components/AgendaDayPanel";
+import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { Select } from "@/shared/ui/Select";
 import { Card } from "@/shared/ui/Card";
 import { Button } from "@/shared/ui/Button";
 import { getAgendaForDate } from "@/shared/utils/agenda";
 import { formatNumericDate } from "@/shared/utils/date";
+import type { ApiOfficeBlock } from "@/shared/types/api";
 
 function getToday() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
+function normalizeTime(value: string) {
+  return value.slice(0, 5);
+}
+
+function applyBlocksToAgenda(agenda: ReturnType<typeof buildAgendaFromSchedules>, blocks: ApiOfficeBlock[]) {
+  return agenda.map((entry) => {
+    const dayBlocks = blocks.filter(
+      (block) => block.officeId === entry.officeId && block.date === entry.date,
+    );
+
+    if (!dayBlocks.length) {
+      return entry;
+    }
+
+    const fullDayBlock = dayBlocks.find((block) => block.type === "full_day");
+    if (fullDayBlock) {
+      return {
+        ...entry,
+        freeSlots: [],
+        blockedSlots: [],
+        bookedSlots: [],
+        fullDayBlocked: true,
+        fullDayBlockId: fullDayBlock.id,
+        fullDayBlockReason: fullDayBlock.reason ?? undefined,
+      };
+    }
+
+    const blockedRanges = dayBlocks
+      .filter((block) => block.type === "time_range" && block.startTime && block.endTime)
+      .map((block) => ({
+        id: block.id,
+        startTime: normalizeTime(block.startTime ?? ""),
+        endTime: normalizeTime(block.endTime ?? ""),
+        reason: block.reason ?? undefined,
+      }));
+
+    const blockedSlots = entry.freeSlots.flatMap((slot) => {
+      const matchingRange = blockedRanges.find(
+        (range) => slot >= range.startTime && slot < range.endTime,
+      );
+
+      if (!matchingRange) {
+        return [];
+      }
+
+      return [
+        {
+          id: `blocked-${matchingRange.id}-${slot}`,
+          blockId: matchingRange.id,
+          time: slot,
+          officeId: entry.officeId,
+          officeName: entry.officeName,
+          reason: matchingRange.reason,
+        },
+      ];
+    });
+
+    return {
+      ...entry,
+      freeSlots: entry.freeSlots.filter(
+        (slot) =>
+          !blockedRanges.some(
+            (range) => slot >= range.startTime && slot < range.endTime,
+          ),
+      ),
+      blockedSlots,
+      fullDayBlocked: false,
+      fullDayBlockId: undefined,
+      fullDayBlockReason: undefined,
+    };
+  });
+}
+
 export function PatientProfessionalDetailPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { professionalId = "" } = useParams();
   const today = getToday();
   const initialMonth = new Date();
+  const currentMonthStart = new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1);
   const [officeId, setOfficeId] = useState("all");
   const [selectedDate, setSelectedDate] = useState(today);
   const [displayMonth, setDisplayMonth] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1));
   const [tab, setTab] = useState("agenda");
+  const [slotToBook, setSlotToBook] = useState<{
+    time: string;
+    officeId: string;
+    officeName?: string;
+  } | null>(null);
+  const [bookingFeedback, setBookingFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
   const patientId = user?.patientId;
   const query = useQuery({
     queryKey: [...queryKeys.patientProfessionalDetail(professionalId), displayMonth.getFullYear(), displayMonth.getMonth()],
@@ -44,19 +131,63 @@ export function PatientProfessionalDetailPage() {
 
   const agenda = useMemo(() => {
     if (!query.data) return [];
-    return buildAgendaFromSchedules(
-      query.data.professional.offices ?? [],
+    const baseAgenda = buildAgendaFromSchedules(
+      query.data.agendaOffices ?? [],
       query.data.appointments,
       displayMonth.getFullYear(),
       displayMonth.getMonth(),
     );
+    return applyBlocksToAgenda(baseAgenda, query.data.blocks ?? []);
   }, [displayMonth, query.data]);
 
   const officeFilter = officeId === "all" ? undefined : officeId;
+  const canGoPrevious = displayMonth.getTime() > currentMonthStart.getTime();
   const dayItems = useMemo(
     () => getAgendaForDate(agenda, selectedDate, officeFilter),
     [agenda, officeFilter, selectedDate],
   );
+  const createAppointmentMutation = useMutation({
+    mutationFn: () => {
+      if (!patientId || !slotToBook) {
+        throw new Error("No se pudo preparar el turno.");
+      }
+
+      return createAppointment({
+        professionalId,
+        officeId: slotToBook.officeId,
+        date: selectedDate,
+        time: slotToBook.time,
+      });
+    },
+    onSuccess: async () => {
+      const successMessage = slotToBook
+        ? `Turno confirmado para el ${formatNumericDate(selectedDate)} a las ${slotToBook.time}${slotToBook.officeName ? ` en ${slotToBook.officeName}` : ""}.`
+        : "Turno confirmado exitosamente.";
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.patientProfessionalDetail(professionalId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.patientDashboard, patientId ?? ""],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.patientAppointments, patientId ?? ""],
+        }),
+      ]);
+      setBookingFeedback({
+        tone: "success",
+        message: successMessage,
+      });
+      setSlotToBook(null);
+    },
+    onError: (error) => {
+      setBookingFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "No se pudo agendar el turno.",
+      });
+    },
+  });
 
   if (query.isLoading) return <div className="centered-feedback">Cargando profesional...</div>;
   if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar este perfil.</div>;
@@ -82,7 +213,7 @@ export function PatientProfessionalDetailPage() {
                     <Select
                       options={[
                         { value: "all", label: "Todos los consultorios" },
-                        ...(professional.offices ?? []).map((office) => ({
+                        ...(query.data.agendaOffices ?? professional.offices ?? []).map((office) => ({
                           value: office.id,
                           label: office.name,
                         })),
@@ -107,7 +238,8 @@ export function PatientProfessionalDetailPage() {
                   setDisplayMonth(new Date(now.getFullYear(), now.getMonth(), 1));
                   setSelectedDate(today);
                 }}
-                canGoPrevious
+                canGoPrevious={canGoPrevious}
+                minDate={today}
               />
             </section>
             <AgendaDayPanel
@@ -115,6 +247,7 @@ export function PatientProfessionalDetailPage() {
               dateLabel={formatNumericDate(selectedDate)}
               items={dayItems}
               mode="patient"
+              onSelectFreeSlot={(slot) => setSlotToBook(slot)}
             />
           </div>
         </div>
@@ -192,7 +325,38 @@ export function PatientProfessionalDetailPage() {
         </div>
       </div>
 
+      {bookingFeedback ? (
+        <div
+          className={`feedback-banner${bookingFeedback.tone === "error" ? " is-error" : " is-success"}`}
+        >
+          <span>{bookingFeedback.message}</span>
+          <Button
+            variant="ghost"
+            className="button-inline"
+            onClick={() => setBookingFeedback(null)}
+          >
+            Cerrar
+          </Button>
+        </div>
+      ) : null}
+
       <div className="viewport-tab-panel">{currentTab?.content}</div>
+
+      <ConfirmDialog
+        isOpen={Boolean(slotToBook)}
+        title="Confirmar turno"
+        description={
+          slotToBook
+            ? `Vas a agendar un turno para el ${formatNumericDate(selectedDate)} a las ${slotToBook.time}${slotToBook.officeName ? ` en ${slotToBook.officeName}` : ""}.`
+            : ""
+        }
+        confirmLabel={createAppointmentMutation.isPending ? "Agendando..." : "Confirmar turno"}
+        onClose={() => setSlotToBook(null)}
+        onConfirm={() => {
+          if (createAppointmentMutation.isPending) return;
+          createAppointmentMutation.mutate();
+        }}
+      />
     </div>
   );
 }

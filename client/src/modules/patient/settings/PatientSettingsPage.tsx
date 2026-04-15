@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/app/providers/AuthProvider";
+import { ChangeEmailCard } from "@/modules/auth/components/ChangeEmailCard";
 import { ChangePasswordCard } from "@/modules/auth/components/ChangePasswordCard";
 import {
   getPatientTeamProfessionals,
@@ -7,7 +8,6 @@ import {
 } from "@/modules/patient/api/patient.api";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { Card } from "@/shared/ui/Card";
-import { Input } from "@/shared/ui/Input";
 import { Button } from "@/shared/ui/Button";
 
 export function PatientSettingsPage() {
@@ -36,17 +36,7 @@ export function PatientSettingsPage() {
 
       <div className="settings-layout">
         <div className="settings-main-column">
-          <Card
-            title="Datos de la cuenta"
-            description="Mail de acceso y cambio de contrasena."
-            className="panel-separated"
-          >
-            <div className="minimal-form">
-              <Input label="Email" value={user?.email ?? ""} disabled />
-              <Input label="Rol" value={user?.role ?? ""} disabled />
-            </div>
-          </Card>
-
+          <ChangeEmailCard />
           <ChangePasswordCard />
 
           <Card

@@ -2,23 +2,68 @@ import { MedicalRecord, Patient, Professional, Appointment, User } from '../data
 import ApiError from '../utils/ApiError.js';
 import { Op } from 'sequelize';
 
+// Campos editables — whitelist estricta
+const ALLOWED_CREATE_FIELDS = [
+	'patientId', 'professionalId', 'appointmentId', 'date',
+	'reason', 'diagnosis', 'indications', 'evolution', 'nextCheckup', 'vitalSigns',
+];
+
+const ALLOWED_UPDATE_FIELDS = [
+	'reason', 'diagnosis', 'indications', 'evolution', 'nextCheckup', 'vitalSigns',
+];
+
+function pickFields(source, allowed) {
+	const result = {};
+	for (const key of allowed) {
+		if (source[key] !== undefined) {
+			result[key] = source[key];
+		}
+	}
+	return result;
+}
+
 class MedicalRecordService {
+	// =========================================================================
+	// CREAR
+	// =========================================================================
+
 	async create(recordData) {
-		const { patientId, professionalId, appointmentId, date, diagnosis, treatment, notes, vitalSigns } = recordData;
+		const data = pickFields(recordData, ALLOWED_CREATE_FIELDS);
+
+		// Verificar que el paciente existe
+		const patient = await Patient.findByPk(data.patientId);
+		if (!patient) {
+			throw new ApiError(404, 'Paciente no encontrado.');
+		}
+
+		// Verificar que el profesional existe
+		const professional = await Professional.findByPk(data.professionalId);
+		if (!professional) {
+			throw new ApiError(404, 'Profesional no encontrado.');
+		}
+
+		// Si se vincula a un turno, verificar que existe y pertenece al mismo paciente/profesional
+		if (data.appointmentId) {
+			const appointment = await Appointment.findByPk(data.appointmentId);
+			if (!appointment) {
+				throw new ApiError(404, 'Turno no encontrado.');
+			}
+			if (appointment.patientId !== data.patientId || appointment.professionalId !== data.professionalId) {
+				throw new ApiError(400, 'El turno no corresponde al paciente/profesional indicado.');
+			}
+		}
 
 		const record = await MedicalRecord.create({
-			patientId,
-			professionalId,
-			appointmentId,
-			date: date || new Date(),
-			diagnosis,
-			treatment,
-			notes,
-			vitalSigns,
+			...data,
+			date: data.date || new Date(),
 		});
 
 		return await this.getById(record.id);
 	}
+
+	// =========================================================================
+	// LEER
+	// =========================================================================
 
 	async getById(recordId) {
 		const record = await MedicalRecord.findByPk(recordId, {
@@ -29,7 +74,8 @@ class MedicalRecordService {
 				},
 				{
 					association: 'professional',
-					include: [{ association: 'user', attributes: ['name', 'lastName', 'specialty'] }],
+					attributes: ['id', 'specialty'],
+					include: [{ association: 'user', attributes: ['name', 'lastName'] }],
 				},
 				{
 					association: 'appointment',
@@ -49,59 +95,45 @@ class MedicalRecordService {
 	async getByPatient(patientId, filters = {}) {
 		const whereClause = { patientId };
 
-		// Filtro por profesional
 		if (filters.professionalId) {
 			whereClause.professionalId = filters.professionalId;
 		}
 
-		// Filtro por rango de fechas
 		if (filters.startDate || filters.endDate) {
 			whereClause.date = {};
-			if (filters.startDate) {
-				whereClause.date[Op.gte] = filters.startDate;
-			}
-			if (filters.endDate) {
-				whereClause.date[Op.lte] = filters.endDate;
-			}
+			if (filters.startDate) whereClause.date[Op.gte] = filters.startDate;
+			if (filters.endDate) whereClause.date[Op.lte] = filters.endDate;
 		}
 
-		// Búsqueda en diagnóstico o tratamiento
 		if (filters.search) {
 			whereClause[Op.or] = [
+				{ reason: { [Op.iLike]: `%${filters.search}%` } },
 				{ diagnosis: { [Op.iLike]: `%${filters.search}%` } },
-				{ treatment: { [Op.iLike]: `%${filters.search}%` } },
-				{ notes: { [Op.iLike]: `%${filters.search}%` } },
+				{ indications: { [Op.iLike]: `%${filters.search}%` } },
+				{ evolution: { [Op.iLike]: `%${filters.search}%` } },
 			];
 		}
 
-		const records = await MedicalRecord.findAll({
+		return await MedicalRecord.findAll({
 			where: whereClause,
 			include: [
 				{
 					association: 'professional',
+					attributes: ['id', 'specialty'],
 					include: [{ association: 'user', attributes: ['name', 'lastName'] }],
 				},
 			],
 			order: [['date', 'DESC']],
 		});
-
-		return records;
 	}
 
 	async getByProfessional(professionalId, filters = {}) {
 		const whereClause = { professionalId };
 
-		// Filtro por paciente
-		if (filters.patientId) {
-			whereClause.patientId = filters.patientId;
-		}
+		if (filters.patientId) whereClause.patientId = filters.patientId;
+		if (filters.date) whereClause.date = filters.date;
 
-		// Filtro por fecha
-		if (filters.date) {
-			whereClause.date = filters.date;
-		}
-
-		const records = await MedicalRecord.findAll({
+		return await MedicalRecord.findAll({
 			where: whereClause,
 			include: [
 				{
@@ -111,9 +143,11 @@ class MedicalRecordService {
 			],
 			order: [['date', 'DESC']],
 		});
-
-		return records;
 	}
+
+	// =========================================================================
+	// ACTUALIZAR
+	// =========================================================================
 
 	async update(recordId, updateData) {
 		const record = await MedicalRecord.findByPk(recordId);
@@ -122,17 +156,17 @@ class MedicalRecordService {
 			throw new ApiError(404, 'Registro médico no encontrado.');
 		}
 
-		const { diagnosis, treatment, notes, vitalSigns } = updateData;
+		// Solo campos permitidos, ignorar cualquier otro
+		const data = pickFields(updateData, ALLOWED_UPDATE_FIELDS);
 
-		await record.update({
-			diagnosis,
-			treatment,
-			notes,
-			vitalSigns,
-		});
+		await record.update(data);
 
 		return await this.getById(recordId);
 	}
+
+	// =========================================================================
+	// ELIMINAR
+	// =========================================================================
 
 	async delete(recordId) {
 		const record = await MedicalRecord.findByPk(recordId);

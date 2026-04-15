@@ -20,7 +20,7 @@ const PasswordResetToken = db.define('PasswordResetToken', {
 	token: {
 		type: DataTypes.STRING,
 		allowNull: false,
-		unique: true,
+		// ✅ FIX: Removido `unique: true` — misma razón que los demás modelos.
 	},
 	expiresAt: {
 		type: DataTypes.DATE,
@@ -31,15 +31,23 @@ const PasswordResetToken = db.define('PasswordResetToken', {
 		type: DataTypes.BOOLEAN,
 		defaultValue: false,
 	},
+}, {
+	indexes: [
+		{
+			unique: true,
+			fields: ['token'],
+			name: 'password_reset_tokens_token_unique',
+		},
+	],
 });
 
 // Método estático para generar token
-PasswordResetToken.generateToken = function() {
+PasswordResetToken.generateToken = function () {
 	return crypto.randomBytes(32).toString('hex');
 };
 
 // Método estático para crear token con expiración
-PasswordResetToken.createForUser = async function(userId) {
+PasswordResetToken.createForUser = async function (userId) {
 	// Invalidar tokens anteriores
 	await PasswordResetToken.update(
 		{ used: true },

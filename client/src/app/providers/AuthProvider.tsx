@@ -26,6 +26,7 @@ interface AuthContextValue extends SessionState {
   login: (values: LoginFormValues) => Promise<SessionUser>;
   register: (values: RegisterFormValues) => Promise<SessionUser>;
   logout: () => Promise<void>;
+  refreshSession: () => Promise<SessionUser | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -140,6 +141,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
               sessionId: activeSessionId,
             });
           }
+        }
+      },
+      async refreshSession() {
+        try {
+          const restoredUser = await getCurrentSessionUser();
+          setUser(restoredUser);
+          return restoredUser;
+        } catch {
+          return null;
         }
       },
     }),

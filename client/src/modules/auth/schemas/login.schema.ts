@@ -88,10 +88,16 @@ export const changePasswordSchema = z
     }
   });
 
+export const changeEmailSchema = z.object({
+  email: sanitizedEmail,
+  password: sanitizedText(6, "Ingresa tu contrasena actual.", 128),
+});
+
 export const registerSchema = z
   .object({
     role: z.enum(["patient", "professional"]),
-    fullName: sanitizedText(3, "Ingresa nombre y apellido.", 120),
+    firstName: sanitizedText(2, "Ingresa tu nombre.", 60),
+    lastName: sanitizedText(2, "Ingresa tu apellido.", 60),
     email: sanitizedEmail,
     phone: sanitizedOptionalText(40),
     document: sanitizedOptionalText(40),

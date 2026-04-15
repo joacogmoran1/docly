@@ -164,7 +164,7 @@ export interface ApiAppointmentOffice {
 }
 
 export type ApiAppointmentStatus =
-  | "scheduled"
+  | "pending"
   | "confirmed"
   | "completed"
   | "cancelled";
@@ -271,9 +271,11 @@ export interface ApiMedicalRecord {
   professionalId: string;
   appointmentId: string | null;
   date: string;
+  reason: string;
   diagnosis: string;
-  treatment: string | null;
-  notes: string | null;
+  indications: string;
+  evolution: string | null;
+  nextCheckup: string | null;
   vitalSigns: ApiVitalSigns;
   createdAt: string;
   updatedAt: string;
@@ -330,4 +332,49 @@ export interface ApiProfessionalPatientDetail extends ApiPatientProfile {
 export interface ApiProfessionalPatientDetailResponse {
   success: boolean;
   data: ApiProfessionalPatientDetail;
+}
+
+export interface ApiProfessionalAvailabilityResponse {
+  success: boolean;
+  data: {
+    offices: ApiOffice[];
+    appointments: Array<{
+      id: string;
+      officeId: string;
+      date: string;
+      time: string;
+      duration: number;
+    }>;
+    blocks: ApiOfficeBlock[];
+  };
+}
+
+export interface ApiOfficeBlock {
+  id: string;
+  officeId: string;
+  date: string;
+  type: "full_day" | "time_range";
+  startTime: string | null;
+  endTime: string | null;
+  reason: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiOfficeBlockResponse {
+  success: boolean;
+  data: ApiOfficeBlock;
+  cancelledAppointments?: number;
+}
+
+export interface ApiOfficeBlockListResponse {
+  success: boolean;
+  results: number;
+  data: ApiOfficeBlock[];
+}
+
+export interface ApiOfficeBlockManyResponse {
+  success: boolean;
+  data: ApiOfficeBlock[];
+  cancelledAppointments?: number;
 }

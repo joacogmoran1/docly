@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "@/app/providers/AuthProvider";
+import { logout as logoutRequest, register as registerRequest } from "@/modules/auth/api/auth.api";
 import { registerSchema } from "@/modules/auth/schemas/login.schema";
 import type { RegisterFormValues } from "@/modules/auth/types/auth-forms";
 import { Button } from "@/shared/ui/Button";
@@ -13,9 +13,7 @@ const steps = ["Cuenta", "Datos", "Seguridad"];
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register: registerUser } = useAuth();
   const [step, setStep] = useState(0);
-  const [createdRole, setCreatedRole] = useState<"patient" | "professional" | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -27,7 +25,8 @@ export function RegisterPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       role: "patient",
-      fullName: "",
+      firstName: "",
+      lastName: "",
       email: "",
       phone: "",
       document: "",
@@ -42,7 +41,7 @@ export function RegisterPage() {
   const role = watch("role");
 
   const currentFields = useMemo(() => {
-    if (step === 0) return ["role", "fullName", "email"] as const;
+    if (step === 0) return ["role", "firstName", "lastName", "email"] as const;
     if (step === 1) {
       return role === "professional"
         ? (["phone", "document", "specialty", "license"] as const)
@@ -54,9 +53,9 @@ export function RegisterPage() {
   const submitRegistration = handleSubmit(async (values) => {
     try {
       setServerError(null);
-      const user = await registerUser(values);
-      setCreatedRole(user.role);
-      setStep(3);
+      await registerRequest(values);
+      await logoutRequest();
+      navigate("/auth/login", { replace: true });
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "No se pudo crear la cuenta.");
     }
@@ -107,10 +106,16 @@ export function RegisterPage() {
               {...register("role")}
             />
             <Input
-              label="Nombre completo"
-              placeholder="Nombre y apellido"
-              error={errors.fullName?.message}
-              {...register("fullName")}
+              label="Nombre"
+              placeholder="Tu nombre"
+              error={errors.firstName?.message}
+              {...register("firstName")}
+            />
+            <Input
+              label="Apellido"
+              placeholder="Tu apellido"
+              error={errors.lastName?.message}
+              {...register("lastName")}
             />
             <Input
               label="Email"
@@ -181,17 +186,9 @@ export function RegisterPage() {
         {step === 3 ? (
           <div className="auth-confirmation-minimal">
             <strong className="title-md">Cuenta creada</strong>
-            <p className="meta">Tu cuenta ya esta lista para empezar a usar Docly.</p>
-            <Button
-              type="button"
-              fullWidth
-              onClick={() =>
-                navigate(createdRole === "professional" ? "/professional" : "/patient", {
-                  replace: true,
-                })
-              }
-            >
-              Ir al inicio
+            <p className="meta">Tu cuenta ya esta lista. Ahora podes iniciar sesion.</p>
+            <Button type="button" fullWidth onClick={() => navigate("/auth/login", { replace: true })}>
+              Ir al login
             </Button>
           </div>
         ) : null}

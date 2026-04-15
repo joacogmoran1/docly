@@ -26,6 +26,7 @@ export function PatientProfessionalRecordDetailPage() {
         title={record.title}
         timestamp={record.timestamp}
         body={record.body}
+        reason={record.reason}
         diagnosis={record.diagnosis}
         treatment={record.treatment}
         notes={record.notes}

@@ -21,12 +21,22 @@ interface ProfessionalMedicalRecordFilters {
 
 interface CreateMedicalRecordInput {
   patientId: string;
-  professionalId: string;
   appointmentId?: string;
   date?: string;
+  reason: string;
   diagnosis: string;
-  treatment?: string;
-  notes?: string;
+  indications: string;
+  evolution?: string;
+  nextCheckup?: string;
+  vitalSigns?: ApiVitalSigns;
+}
+
+interface UpdateMedicalRecordInput {
+  reason?: string;
+  diagnosis?: string;
+  indications?: string;
+  evolution?: string;
+  nextCheckup?: string;
   vitalSigns?: ApiVitalSigns;
 }
 
@@ -97,5 +107,22 @@ export async function createMedicalRecord(input: CreateMedicalRecordInput) {
     return response.data.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, "No se pudo crear el registro medico."));
+  }
+}
+
+export async function updateMedicalRecord(id: string, input: UpdateMedicalRecordInput) {
+  try {
+    const response = await apiClient.put<ApiMedicalRecordResponse>(`/medical-records/${id}`, input);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo actualizar el registro medico."));
+  }
+}
+
+export async function deleteMedicalRecord(id: string) {
+  try {
+    await apiClient.delete(`/medical-records/${id}`);
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo eliminar el registro medico."));
   }
 }

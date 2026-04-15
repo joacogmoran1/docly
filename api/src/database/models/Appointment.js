@@ -46,9 +46,21 @@ const Appointment = db.define('Appointment', {
 		type: DataTypes.INTEGER,
 		defaultValue: 30,
 	},
+	/**
+	 * Máquina de estados:
+	 *
+	 *   pending ──→ confirmed ──→ completed
+	 *     │              │
+	 *     └──→ cancelled ←┘
+	 *
+	 * pending:   profesional agenda → paciente debe confirmar o cancelar
+	 * confirmed: paciente aceptó el turno
+	 * completed: consulta finalizada (lo marca el profesional)
+	 * cancelled: cancelado por cualquiera de las partes
+	 */
 	status: {
-		type: DataTypes.ENUM('scheduled', 'confirmed', 'completed', 'cancelled'),
-		defaultValue: 'scheduled',
+		type: DataTypes.ENUM('pending', 'confirmed', 'completed', 'cancelled'),
+		defaultValue: 'pending',
 	},
 	reason: {
 		type: DataTypes.STRING,
@@ -70,6 +82,9 @@ const Appointment = db.define('Appointment', {
 		},
 		{
 			fields: ['professional_id'],
+		},
+		{
+			fields: ['status'],
 		},
 	],
 });

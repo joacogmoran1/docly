@@ -4,17 +4,22 @@ import { protect, restrictTo } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Búsqueda pública (requiere auth pero cualquier rol)
+// ── Búsqueda (cualquier usuario autenticado) ─────────────────────────────
 router.get('/search', protect, professionalController.search);
 router.get('/:id', protect, professionalController.getById);
 
-// Actualización solo para profesionales
+// ── Perfil (solo el profesional dueño) ──────────────────────────────────
 router.put('/:id', protect, restrictTo('professional'), professionalController.updateProfile);
 
-// ⭐ NUEVO: Obtener disponibilidad del profesional (agenda con consultorios y horarios)
+// ── Firma del profesional ───────────────────────────────────────────────
+router.get('/:id/signature', protect, restrictTo('professional'), professionalController.getSignature);
+router.put('/:id/signature', protect, restrictTo('professional'), professionalController.uploadSignature);
+router.delete('/:id/signature', protect, restrictTo('professional'), professionalController.deleteSignature);
+
+// ── Disponibilidad ──────────────────────────────────────────────────────
 router.get('/:professionalId/availability', protect, professionalController.getProfessionalAvailability);
 
-// ⭐ NUEVO: Obtener todos los pacientes del profesional
+// ── Pacientes del profesional ───────────────────────────────────────────
 router.get(
 	'/:professionalId/patients',
 	protect,
@@ -22,7 +27,6 @@ router.get(
 	professionalController.getProfessionalPatients
 );
 
-// ⭐ NUEVO: Obtener un paciente específico del profesional con toda su info
 router.get(
 	'/:professionalId/patients/:patientId',
 	protect,
@@ -30,7 +34,7 @@ router.get(
 	professionalController.getProfessionalPatient
 );
 
-// Gestión de equipo médico del paciente
+// ── Equipo médico del paciente ──────────────────────────────────────────
 router.post(
 	'/patients/:patientId/professionals/:professionalId',
 	protect,

@@ -91,7 +91,6 @@ export function ProfessionalPatientDetailPage() {
             <Card title="Crear registro" className="panel-separated">
               <ConsultationRecordComposer
                 patientId={patientId}
-                professionalId={professionalId}
                 onCancel={() => setIsCreatingRecord(false)}
                 onSuccess={() => setIsCreatingRecord(false)}
               />

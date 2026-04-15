@@ -18,18 +18,23 @@ const sanitizedMultiline = (minLength: number, message: string, maxLength = 2500
     z.string().min(minLength, message),
   );
 
+const optionalSanitizedMultiline = (minLength: number, message: string, maxLength = 2500) =>
+  z.preprocess(
+    (value) => {
+      if (typeof value !== "string") return value;
+
+      const sanitized = sanitizeMultilineInput(value, maxLength);
+      return sanitized.length ? sanitized : undefined;
+    },
+    z.string().min(minLength, message).optional(),
+  );
+
 export const consultationSchema = z.object({
   reason: sanitizedSingleLine(4, "Ingresa el motivo de consulta."),
   assessment: sanitizedMultiline(4, "Ingresa un analisis clinico."),
   indications: sanitizedMultiline(4, "Ingresa indicaciones."),
-  evolution: sanitizedMultiline(4, "Ingresa evolucion."),
+  evolution: optionalSanitizedMultiline(4, "Ingresa evolucion."),
   nextControl: sanitizedSingleLine(1, "Indica proximo control.", 120),
-  attachments: z
-    .preprocess(
-      (value) =>
-        typeof value === "string" ? sanitizeSingleLineInput(value, 255) : value,
-      z.string().optional(),
-    ),
 });
 
 export type ConsultationFormValues = z.infer<typeof consultationSchema>;

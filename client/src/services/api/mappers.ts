@@ -1,4 +1,5 @@
 import { rolePermissions } from "@/services/permissions/permissions";
+import { getStudyTypeDefinition } from "@/shared/constants/medical-options";
 import type {
   ApiAppointment,
   ApiAppointmentStatus,
@@ -73,8 +74,41 @@ function safeText(value: string | null | undefined, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+const nextCheckupLabels: Record<string, string> = {
+  "1_week": "1 semana",
+  "2_weeks": "2 semanas",
+  "3_weeks": "3 semanas",
+  "4_weeks": "4 semanas",
+  "1_month": "1 mes",
+  "2_months": "2 meses",
+  "3_months": "3 meses",
+  "4_months": "4 meses",
+  "5_months": "5 meses",
+  "6_months": "6 meses",
+  "9_months": "9 meses",
+  "12_months": "12 meses",
+  to_define: "A definir",
+};
+
 function normalizeTime(value: string) {
   return value.slice(0, 5);
+}
+
+function parseStudyAttachments(value: string | null | undefined) {
+  const source = safeText(value);
+
+  if (!source) {
+    return [];
+  }
+
+  if (source.startsWith("data:")) {
+    return [source];
+  }
+
+  return source
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function buildFullName(name: string, lastName?: string | null) {
@@ -201,18 +235,12 @@ export function mapHealthInfoToSections(healthInfo: ApiHealthInfo | null): Healt
       updatedAt,
       privacy: "Visible para profesionales autorizados.",
     },
-    {
-      id: "notes",
-      title: "Notas",
-      items: healthInfo.notes ? [healthInfo.notes] : ["Sin notas registradas."],
-      updatedAt,
-      privacy: "Uso clinico compartido con tu equipo medico.",
-    },
   ];
 }
 
 export function mapApiAppointmentStatus(status: ApiAppointmentStatus): AppointmentItem["status"] {
-  if (status === "confirmed" || status === "completed") return "Confirmado";
+  if (status === "confirmed") return "Confirmado";
+  if (status === "completed") return "Completado";
   if (status === "cancelled") return "Cancelado";
   return "Pendiente";
 }
@@ -298,7 +326,9 @@ export function mapAppointmentToScheduleEvent(appointment: ApiAppointment): Sche
     status:
       appointment.status === "cancelled"
         ? "Cancelado"
-        : appointment.status === "confirmed" || appointment.status === "completed"
+        : appointment.status === "completed"
+          ? "Completado"
+          : appointment.status === "confirmed"
           ? "Confirmado"
           : "Pendiente",
     reason: appointment.reason ?? "Consulta",
@@ -363,8 +393,12 @@ export function buildAgendaFromSchedules(
       agenda.push({
         date,
         officeId: office.id,
+        officeName: office.name,
         freeSlots: allSlots.filter((slot) => !bookedTimes.has(slot)),
         bookedSlots,
+        blockedSlots: [],
+        fullDayBlocked: false,
+        fullDayBlockReason: undefined,
       });
     });
   }
@@ -426,7 +460,18 @@ export function mapStudyToItem(study: ApiStudy): StudyItem {
   const requestedBy = study.professional?.user
     ? buildFullName(study.professional.user.name, study.professional.user.lastName)
     : "Paciente";
-  const isAvailable = Boolean(study.fileUrl || study.results);
+  const definition = getStudyTypeDefinition(study.type);
+  const attachmentUrls = parseStudyAttachments(study.fileUrl);
+  const reportUrl = safeText(study.results);
+  const isAvailable = Boolean(attachmentUrls.length || reportUrl);
+  const attachmentLabel =
+    definition.attachmentKind === "image"
+      ? attachmentUrls.length
+        ? `${attachmentUrls.length} imagen${attachmentUrls.length > 1 ? "es" : ""} cargada${attachmentUrls.length > 1 ? "s" : ""}.`
+        : "Sin imagenes cargadas."
+      : attachmentUrls.length
+        ? "Resultados en PDF cargados."
+        : "Sin resultados cargados.";
 
   return {
     id: study.id,
@@ -435,10 +480,12 @@ export function mapStudyToItem(study: ApiStudy): StudyItem {
     requestedBy,
     date: study.date,
     status: isAvailable ? "Disponible" : "Pendiente",
-    reportSummary: safeText(study.results || study.notes, "Sin resultados cargados."),
-    images: study.fileUrl ? [study.fileUrl] : [],
-    notes: safeText(study.notes),
-    fileUrl: safeText(study.fileUrl),
+    reportSummary: reportUrl ? "Informe PDF cargado." : attachmentLabel,
+    images: definition.attachmentKind === "image" ? attachmentUrls : [],
+    fileUrl: attachmentUrls[0],
+    reportUrl: reportUrl || undefined,
+    attachmentKind: definition.attachmentKind,
+    attachmentUrls,
   };
 }
 
@@ -446,16 +493,23 @@ export function mapMedicalRecordToItem(record: ApiMedicalRecord): MedicalRecordI
   const professionalName = record.professional?.user
     ? buildFullName(record.professional.user.name, record.professional.user.lastName)
     : undefined;
+  const nextCheckupLabel = record.nextCheckup ? nextCheckupLabels[record.nextCheckup] ?? record.nextCheckup : "";
+  const notes = [safeText(record.evolution), nextCheckupLabel ? `Proximo control: ${nextCheckupLabel}` : ""]
+    .filter(Boolean)
+    .join("\n\n");
 
   return {
     id: record.id,
-    title: record.diagnosis.split(".")[0] || "Registro medico",
-    summary: safeText(record.treatment || record.notes, "Sin resumen cargado."),
+    title: record.reason.split(".")[0] || "Registro medico",
+    summary: safeText(record.indications || record.evolution, "Sin resumen cargado."),
     timestamp: record.date,
-    body: [record.diagnosis, record.treatment, record.notes].filter(Boolean).join("\n\n"),
+    body: [record.reason, record.diagnosis, record.indications, record.evolution, nextCheckupLabel]
+      .filter(Boolean)
+      .join("\n\n"),
+    reason: record.reason,
     diagnosis: record.diagnosis,
-    treatment: safeText(record.treatment),
-    notes: safeText(record.notes),
+    treatment: safeText(record.indications),
+    notes,
     professionalName,
     vitalSigns: {
       bloodPressure: safeText(record.vitalSigns?.bloodPressure),
@@ -496,7 +550,9 @@ export function mapProfessionalPatientsToListItems(
       email: patient.user.email,
       appointmentsCount: patient.stats.totalAppointments,
       prescriptionsCount: patient.stats.totalPrescriptions,
-      lastAppointmentStatus: patient.stats.lastAppointmentStatus ?? undefined,
+      lastAppointmentStatus: patient.stats.lastAppointmentStatus
+        ? mapApiAppointmentStatus(patient.stats.lastAppointmentStatus)
+        : undefined,
     };
   });
 }

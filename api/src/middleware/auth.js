@@ -20,17 +20,11 @@ export const protect = catchAsync(async (req, res, next) => {
 		throw new ApiError(401, 'Token inválido o expirado.');
 	}
 
-	// ✅ CORREGIDO: Verificar que el usuario existe y cargar relaciones
+	// Verificar que el usuario existe y cargar relaciones
 	const user = await User.findByPk(decoded.id, {
 		include: [
-			{
-				association: 'professional',
-				required: false,
-			},
-			{
-				association: 'patient',
-				required: false,
-			},
+			{ association: 'professional', required: false },
+			{ association: 'patient', required: false },
 		],
 	});
 
@@ -43,10 +37,12 @@ export const protect = catchAsync(async (req, res, next) => {
 	next();
 });
 
+// Usar next(error) en vez de throw directo para consistencia
+// y para garantizar que Express maneje el error correctamente
 export const restrictTo = (...roles) => {
 	return (req, res, next) => {
 		if (!roles.includes(req.user.role)) {
-			throw new ApiError(403, 'No tienes permiso para realizar esta acción.');
+			return next(new ApiError(403, 'No tienes permiso para realizar esta acción.'));
 		}
 		next();
 	};

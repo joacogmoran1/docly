@@ -11,7 +11,8 @@ const User = db.define('User', {
 	email: {
 		type: DataTypes.STRING,
 		allowNull: false,
-		unique: true,
+		// ✅ FIX: Removido `unique: true` — misma razón que Patient/Professional.
+		// sync({ alter: true }) genera SQL inválido con unique en columna.
 		validate: {
 			isEmail: true,
 		},
@@ -41,6 +42,13 @@ const User = db.define('User', {
 		field: 'is_active',
 	},
 }, {
+	indexes: [
+		{
+			unique: true,
+			fields: ['email'],
+			name: 'users_email_unique',
+		},
+	],
 	hooks: {
 		beforeCreate: async (user) => {
 			if (user.password) {

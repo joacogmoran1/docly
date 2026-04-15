@@ -5,6 +5,7 @@ interface RecordDetailViewProps {
   title: string;
   timestamp: string;
   body: string;
+  reason?: string;
   diagnosis?: string;
   treatment?: string;
   notes?: string;
@@ -21,6 +22,7 @@ export function RecordDetailView({
   title,
   timestamp,
   body,
+  reason,
   diagnosis,
   treatment,
   notes,
@@ -29,6 +31,12 @@ export function RecordDetailView({
   return (
     <Card title={title} description={formatDateTime(timestamp)} className="panel-separated">
       <div className="stack-md">
+        {reason ? (
+          <div className="stack-sm">
+            <span className="meta">Motivo de consulta</span>
+            <strong>{reason}</strong>
+          </div>
+        ) : null}
         {diagnosis ? (
           <div className="stack-sm">
             <span className="meta">Diagnostico</span>

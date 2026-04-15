@@ -1,6 +1,14 @@
 import express from 'express';
 import * as authController from '../controllers/authController.js';
-import { registerValidator, loginValidator, forgotPasswordValidator, resetPasswordValidator, changePasswordValidator } from '../validators/authValidators.js';
+import {
+    registerValidator,
+    loginValidator,
+    forgotPasswordValidator,
+    resetPasswordValidator,
+    changePasswordValidator,
+    changeEmailValidator,
+    deleteAccountValidator,
+} from '../validators/authValidators.js';
 import { validate } from '../middleware/validation.js';
 import { protect } from '../middleware/auth.js';
 import { authLimiter } from '../middleware/rateLimiter.js';

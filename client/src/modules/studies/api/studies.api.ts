@@ -1,7 +1,7 @@
 import { apiClient } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/errors";
 import { mapStudyToItem } from "@/services/api/mappers";
-import type { ApiStudyListResponse, ApiStudyResponse } from "@/shared/types/api";
+import type { ApiMessageResponse, ApiStudyListResponse, ApiStudyResponse } from "@/shared/types/api";
 
 interface PatientStudyFilters {
   professionalId?: string;
@@ -12,6 +12,16 @@ interface PatientStudyFilters {
 
 interface ProfessionalStudyFilters {
   patientId?: string;
+}
+
+interface StudyInput {
+  patientId: string;
+  professionalId?: string | null;
+  type: string;
+  date: string;
+  results?: string;
+  fileUrl?: string;
+  notes?: string;
 }
 
 export async function getStudy(id: string) {
@@ -62,5 +72,32 @@ export async function getProfessionalStudies(
     throw new Error(
       getApiErrorMessage(error, "No se pudieron cargar los estudios del profesional."),
     );
+  }
+}
+
+export async function createStudy(input: StudyInput) {
+  try {
+    const response = await apiClient.post<ApiStudyResponse>("/studies", input);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo crear el estudio."));
+  }
+}
+
+export async function updateStudy(id: string, input: Partial<StudyInput>) {
+  try {
+    const response = await apiClient.put<ApiStudyResponse>(`/studies/${id}`, input);
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo actualizar el estudio."));
+  }
+}
+
+export async function deleteStudy(id: string) {
+  try {
+    const response = await apiClient.delete<ApiMessageResponse>(`/studies/${id}`);
+    return response.data.message;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo eliminar el estudio."));
   }
 }

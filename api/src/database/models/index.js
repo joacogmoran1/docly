@@ -4,6 +4,7 @@ import Professional from './Professional.js';
 import HealthInfo from './HealthInfo.js';
 import Office from './Office.js';
 import Schedule from './Schedule.js';
+import OfficeBlock from './OfficeBlock.js';
 import Appointment from './Appointment.js';
 import Prescription from './Prescription.js';
 import Study from './Study.js';
@@ -33,10 +34,14 @@ Professional.hasMany(MedicalRecord, { foreignKey: 'professionalId', as: 'medical
 // Office associations
 Office.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
 Office.hasMany(Schedule, { foreignKey: 'officeId', as: 'schedules' });
+Office.hasMany(OfficeBlock, { foreignKey: 'officeId', as: 'blocks' });
 Office.hasMany(Appointment, { foreignKey: 'officeId', as: 'appointments' });
 
 // Schedule associations
 Schedule.belongsTo(Office, { foreignKey: 'officeId', as: 'office' });
+
+// OfficeBlock associations
+OfficeBlock.belongsTo(Office, { foreignKey: 'officeId', as: 'office' });
 
 // Many-to-many: Patient <-> Professional
 Patient.belongsToMany(Professional, {
@@ -77,6 +82,7 @@ export {
 	HealthInfo,
 	Office,
 	Schedule,
+	OfficeBlock,
 	Appointment,
 	Prescription,
 	Study,

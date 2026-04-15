@@ -7,12 +7,12 @@ import type {
 
 interface ProfessionalAppointmentFilters {
   date?: string;
-  status?: "scheduled" | "confirmed" | "completed" | "cancelled";
+  status?: "pending" | "confirmed" | "completed" | "cancelled";
 }
 
 interface CreateAppointmentInput {
-  patientId: string;
-  professionalId: string;
+  patientId?: string;
+  professionalId?: string;
   officeId: string;
   date: string;
   time: string;
@@ -71,5 +71,42 @@ export async function cancelAppointment(id: string, reason?: string) {
     return response.data.data;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, "No se pudo cancelar el turno."));
+  }
+}
+
+export async function confirmAppointment(id: string) {
+  try {
+    const response = await apiClient.post<ApiAppointmentResponse>(
+      `/appointments/${id}/confirm`,
+    );
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo confirmar el turno."));
+  }
+}
+
+export async function completeAppointment(id: string) {
+  try {
+    const response = await apiClient.post<ApiAppointmentResponse>(
+      `/appointments/${id}/complete`,
+    );
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo completar el turno."));
+  }
+}
+
+export async function rescheduleAppointment(
+  id: string,
+  input: { date: string; time: string; duration?: number; reason?: string },
+) {
+  try {
+    const response = await apiClient.post<ApiAppointmentResponse>(
+      `/appointments/${id}/reschedule`,
+      input,
+    );
+    return response.data.data;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo reprogramar el turno."));
   }
 }

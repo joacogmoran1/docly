@@ -1,23 +1,9 @@
-import {
-	SessionUser,
-	Permission,
-	ProfessionalCard,
-	AppointmentItem,
-	StudyItem,
-	PrescriptionItem,
-	HealthSection,
-	PatientListItem,
-	OfficeItem,
-	ScheduleEvent,
-	AgendaDay,
-	ActivityItem,
-	PatientProfileResponse,
-} from '../types/dtos.js';
+// ✅ FIX: Convertido de .ts a .js — removidas todas las anotaciones TypeScript
 
 /**
  * Mapea un usuario a SessionUser para el frontend
  */
-export function mapToSessionUser(user: any): SessionUser {
+export function mapToSessionUser(user) {
 	const role = user.role;
 	const permissions = getPermissionsByRole(role);
 
@@ -51,7 +37,7 @@ export function mapToSessionUser(user: any): SessionUser {
 /**
  * Obtiene permisos según el rol
  */
-function getPermissionsByRole(role: string): Permission[] {
+function getPermissionsByRole(role) {
 	if (role === 'patient') {
 		return [
 			'appointments:read',
@@ -88,7 +74,7 @@ function getPermissionsByRole(role: string): Permission[] {
 /**
  * Obtiene iniciales de un nombre completo
  */
-function getInitials(fullName: string): string {
+function getInitials(fullName) {
 	const parts = fullName.split(' ').filter(Boolean);
 	if (parts.length === 0) return '?';
 	if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
@@ -98,20 +84,16 @@ function getInitials(fullName: string): string {
 /**
  * Mapea un profesional a ProfessionalCard
  */
-export function mapToProfessionalCard(
-	professional: any,
-	isInTeam: boolean = false
-): ProfessionalCard {
+export function mapToProfessionalCard(professional, isInTeam = false) {
 	const user = professional.user || {};
 	const fullName = `${user.name || ''} ${user.lastName || ''}`.trim();
 
 	const offices =
-		professional.offices?.map((o: any) => ({
+		professional.offices?.map((o) => ({
 			id: o.id,
 			name: o.name,
 		})) || [];
 
-	// Determinar próximo disponible (esto requeriría lógica de agenda real)
 	const nextAvailable = null; // TODO: Calcular basándose en schedules y appointments
 
 	return {
@@ -130,16 +112,17 @@ export function mapToProfessionalCard(
 /**
  * Mapea un turno a AppointmentItem
  */
-export function mapToAppointmentItem(appointment: any): AppointmentItem {
+export function mapToAppointmentItem(appointment) {
 	const professional = appointment.professional?.user || {};
 	const professionalName = `${professional.name || ''} ${professional.lastName || ''}`.trim();
 
-	const status =
-		appointment.status === 'scheduled' || appointment.status === 'confirmed'
-			? 'Confirmado'
-			: appointment.status === 'cancelled'
-			? 'Cancelado'
-			: 'Pendiente';
+	const statusMap = {
+		pending: 'Pendiente',
+		confirmed: 'Confirmado',
+		completed: 'Completado',
+		cancelled: 'Cancelado',
+	};
+	const status = statusMap[appointment.status] || 'Pendiente';
 
 	return {
 		id: appointment.id,
@@ -150,14 +133,14 @@ export function mapToAppointmentItem(appointment: any): AppointmentItem {
 		).toISOString(),
 		office: appointment.office?.name || 'Consultorio',
 		status,
-		type: 'Presencial', // TODO: Agregar campo 'type' al modelo si es necesario
+		type: 'Presencial',
 	};
 }
 
 /**
  * Mapea un estudio a StudyItem
  */
-export function mapToStudyItem(study: any): StudyItem {
+export function mapToStudyItem(study) {
 	const professional = study.professional?.user || {};
 	const requestedBy = `${professional.name || ''} ${professional.lastName || ''}`.trim();
 
@@ -178,11 +161,10 @@ export function mapToStudyItem(study: any): StudyItem {
 /**
  * Mapea una receta a PrescriptionItem
  */
-export function mapToPrescriptionItem(prescription: any): PrescriptionItem {
+export function mapToPrescriptionItem(prescription) {
 	const professional = prescription.professional?.user || {};
 	const professionalName = `${professional.name || ''} ${professional.lastName || ''}`.trim();
 
-	// Extraer primer medicamento
 	const medications = prescription.medications || [];
 	const firstMed = medications[0] || {};
 	const medication = firstMed.name || 'Medicación';
@@ -200,10 +182,10 @@ export function mapToPrescriptionItem(prescription: any): PrescriptionItem {
 /**
  * Mapea healthInfo a array de HealthSection
  */
-export function mapToHealthSections(healthInfo: any): HealthSection[] {
+export function mapToHealthSections(healthInfo) {
 	if (!healthInfo) return [];
 
-	const sections: HealthSection[] = [];
+	const sections = [];
 
 	if (healthInfo.diseases && healthInfo.diseases.length > 0) {
 		sections.push({
@@ -241,19 +223,13 @@ export function mapToHealthSections(healthInfo: any): HealthSection[] {
 /**
  * Mapea un paciente a PatientListItem
  */
-export function mapToPatientListItem(
-	patient: any,
-	stats?: any
-): PatientListItem {
+export function mapToPatientListItem(patient, stats) {
 	const user = patient.user || {};
 	const fullName = `${user.name || ''} ${user.lastName || ''}`.trim();
 
-	// Calcular edad desde birthDate
 	let age = 0;
 	if (patient.birthDate) {
-		const birthDate = new Date(patient.birthDate);
-		const today = new Date();
-		age = today.getFullYear() - birthDate.getFullYear();
+		age = calculateAge(patient.birthDate);
 	}
 
 	return {
@@ -264,22 +240,21 @@ export function mapToPatientListItem(
 		phone: user.phone || 'Sin teléfono',
 		coverage: patient.medicalCoverage || 'Sin cobertura',
 		lastVisit: stats?.lastAppointmentDate || null,
-		nextAppointment: null, // TODO: Calcular próximo turno
-		alerts: [], // TODO: Obtener de healthInfo.allergies
+		nextAppointment: null,
+		alerts: [],
 		studiesCount: stats?.totalStudies || 0,
 		reportsCount: stats?.totalRecords || 0,
-		imagesCount: 0, // TODO: Contar imágenes en estudios
+		imagesCount: 0,
 	};
 }
 
 /**
  * Mapea un consultorio a OfficeItem
  */
-export function mapToOfficeItem(office: any): OfficeItem {
+export function mapToOfficeItem(office) {
 	const schedules = office.schedules || [];
 
-	// Generar descripción de días
-	const daysMap: { [key: number]: string } = {
+	const daysMap = {
 		0: 'Domingo',
 		1: 'Lunes',
 		2: 'Martes',
@@ -290,18 +265,16 @@ export function mapToOfficeItem(office: any): OfficeItem {
 	};
 
 	const uniqueDays = [
-		...new Set(schedules.map((s: any) => s.dayOfWeek)),
+		...new Set(schedules.map((s) => s.dayOfWeek)),
 	].sort();
 	const days = uniqueDays.map((d) => daysMap[d]).join(', ');
 
-	// Generar descripción de horario
 	const times = schedules.map(
-		(s: any) => `${s.startTime.substring(0, 5)} a ${s.endTime.substring(0, 5)}`
+		(s) => `${s.startTime.substring(0, 5)} a ${s.endTime.substring(0, 5)}`
 	);
 	const schedule = times.join(' / ');
 
-	// Weekly rules
-	const weeklyRules = schedules.map((s: any) => ({
+	const weeklyRules = schedules.map((s) => ({
 		day: daysMap[s.dayOfWeek],
 		hours: `${s.startTime.substring(0, 5)} - ${s.endTime.substring(0, 5)}`,
 		duration: `${office.appointmentDuration} min`,
@@ -316,22 +289,22 @@ export function mapToOfficeItem(office: any): OfficeItem {
 		schedule,
 		appointmentDuration: `${office.appointmentDuration} min`,
 		weeklyRules,
-		blockedDates: [], // TODO: Implementar si hay modelo para esto
-		blockedTimes: [], // TODO: Implementar si hay modelo para esto
+		blockedDates: [],
+		blockedTimes: [],
 	};
 }
 
 /**
  * Mapea un turno a ScheduleEvent
  */
-export function mapToScheduleEvent(appointment: any): ScheduleEvent {
+export function mapToScheduleEvent(appointment) {
 	const patient = appointment.patient?.user || {};
 	const patientName = `${patient.name || ''} ${patient.lastName || ''}`.trim();
 
-	const statusMap: any = {
-		scheduled: 'Pendiente',
+	const statusMap = {
+		pending: 'Pendiente',
 		confirmed: 'Confirmado',
-		completed: 'Confirmado',
+		completed: 'Completado',
 		cancelled: 'Cancelado',
 	};
 
@@ -352,11 +325,11 @@ export function mapToScheduleEvent(appointment: any): ScheduleEvent {
 /**
  * Mapea un registro médico a ActivityItem
  */
-export function mapToActivityItem(record: any): ActivityItem {
+export function mapToActivityItem(record) {
 	return {
 		id: record.id,
-		title: record.diagnosis?.substring(0, 50) || 'Registro médico',
-		description: record.treatment || record.diagnosis || 'Sin descripción',
+		title: record.reason?.substring(0, 50) || 'Registro médico',
+		description: record.diagnosis || record.indications || 'Sin descripción',
 		timestamp: new Date(record.date || record.createdAt).toISOString(),
 		type: 'record',
 	};
@@ -365,17 +338,13 @@ export function mapToActivityItem(record: any): ActivityItem {
 /**
  * Mapea perfil de paciente a PatientProfileResponse
  */
-export function mapToPatientProfile(patient: any): PatientProfileResponse {
+export function mapToPatientProfile(patient) {
 	const user = patient.user || {};
 	const fullName = `${user.name || ''} ${user.lastName || ''}`.trim();
 
-	// Formatear birthDate
 	let birthDate = '';
 	if (patient.birthDate) {
-		const date = new Date(patient.birthDate);
-		birthDate = `${date.getDate().toString().padStart(2, '0')}/${(date.getMonth() + 1)
-			.toString()
-			.padStart(2, '0')}/${date.getFullYear()}`;
+		birthDate = formatDateDDMMYYYY(patient.birthDate);
 	}
 
 	return {
@@ -391,7 +360,7 @@ export function mapToPatientProfile(patient: any): PatientProfileResponse {
 /**
  * Calcula edad desde fecha de nacimiento
  */
-export function calculateAge(birthDate: string): number {
+export function calculateAge(birthDate) {
 	if (!birthDate) return 0;
 	const birth = new Date(birthDate);
 	const today = new Date();
@@ -406,7 +375,7 @@ export function calculateAge(birthDate: string): number {
 /**
  * Formatea fecha a DD/MM/YYYY
  */
-export function formatDateDDMMYYYY(date: string | Date): string {
+export function formatDateDDMMYYYY(date) {
 	const d = new Date(date);
 	return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1)
 		.toString()

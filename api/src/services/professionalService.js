@@ -1,4 +1,5 @@
-import { Professional, User, Patient, PatientProfessional, Appointment, Prescription, MedicalRecord, Study } from '../database/models/index.js';
+import { Professional, User, Patient, PatientProfessional, Appointment, Prescription, MedicalRecord, Study, Office, Schedule } from '../database/models/index.js';
+import officeBlockService from './officeBlockService.js'; // ✅ NUEVO
 import ApiError from '../utils/ApiError.js';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
@@ -25,11 +26,11 @@ class ProfessionalService {
 					attributes: ['id', 'email', 'name', 'lastName', 'phone'],
 					where: query
 						? {
-								[Op.or]: [
-									{ name: { [Op.iLike]: `%${query}%` } },
-									{ lastName: { [Op.iLike]: `%${query}%` } },
-								],
-						  }
+							[Op.or]: [
+								{ name: { [Op.iLike]: `%${query}%` } },
+								{ lastName: { [Op.iLike]: `%${query}%` } },
+							],
+						}
 						: {},
 				},
 			],
@@ -40,12 +41,23 @@ class ProfessionalService {
 
 	async getById(professionalId) {
 		const professional = await Professional.findByPk(professionalId, {
+			attributes: { exclude: ['signature'] },
 			include: [
 				{
 					association: 'user',
 					attributes: ['id', 'email', 'name', 'lastName', 'phone'],
 				},
-				{ association: 'offices' },
+				{
+					association: 'offices',
+					include: [
+						{
+							model: Schedule,
+							as: 'schedules',
+							where: { isActive: true },
+							required: false,
+						},
+					],
+				},
 			],
 		});
 
@@ -130,12 +142,10 @@ class ProfessionalService {
 	}
 
 	/**
-	 * ⭐ NUEVO: Obtener todos los pacientes de un profesional
+	 * Obtener todos los pacientes de un profesional
 	 * con estadísticas y último turno
 	 */
 	async getProfessionalPatients(professionalId) {
-		// Obtener todos los pacientes únicos que tienen relación con el profesional
-		// a través de turnos, recetas, registros médicos o estudios
 		const patientsData = await sequelize.query(
 			`
 			SELECT DISTINCT
@@ -228,11 +238,10 @@ class ProfessionalService {
 	}
 
 	/**
-	 * ⭐ NUEVO: Obtener un paciente específico del profesional
+	 * Obtener un paciente específico del profesional
 	 * con toda su información médica relacionada
 	 */
 	async getProfessionalPatient(professionalId, patientId) {
-		// Verificar que el paciente tenga relación con el profesional
 		const hasRelation = await sequelize.query(
 			`
 			SELECT 1
@@ -257,16 +266,13 @@ class ProfessionalService {
 			throw new ApiError(404, 'Paciente no encontrado o sin relación con este profesional.');
 		}
 
-		// Obtener paciente completo
 		const patient = await Patient.findByPk(patientId, {
 			include: [
 				{
 					association: 'user',
 					attributes: ['id', 'email', 'name', 'lastName', 'phone'],
 				},
-				{
-					association: 'healthInfo',
-				},
+				{ association: 'healthInfo' },
 			],
 		});
 
@@ -274,40 +280,25 @@ class ProfessionalService {
 			throw new ApiError(404, 'Paciente no encontrado.');
 		}
 
-		// Obtener registros médicos del profesional
 		const medicalRecords = await MedicalRecord.findAll({
-			where: {
-				patientId,
-				professionalId,
-			},
+			where: { patientId, professionalId },
 			order: [['date', 'DESC']],
-			limit: 10, // Últimos 10 registros
+			limit: 10,
 		});
 
-		// Obtener recetas del profesional
 		const prescriptions = await Prescription.findAll({
-			where: {
-				patientId,
-				professionalId,
-			},
+			where: { patientId, professionalId },
 			order: [['createdAt', 'DESC']],
-			limit: 10, // Últimas 10 recetas
+			limit: 10,
 		});
 
-		// Obtener estudios (todos)
 		const studies = await Study.findAll({
-			where: {
-				patientId,
-			},
+			where: { patientId },
 			order: [['date', 'DESC']],
 		});
 
-		// Obtener turnos del profesional
 		const appointments = await Appointment.findAll({
-			where: {
-				patientId,
-				professionalId,
-			},
+			where: { patientId, professionalId },
 			include: [
 				{
 					association: 'office',
@@ -315,7 +306,7 @@ class ProfessionalService {
 				},
 			],
 			order: [['date', 'DESC'], ['time', 'DESC']],
-			limit: 10, // Últimos 10 turnos
+			limit: 10,
 		});
 
 		return {
@@ -328,13 +319,10 @@ class ProfessionalService {
 	}
 
 	/**
-	 * ⭐ NUEVO: Obtener disponibilidad del profesional
-	 * Devuelve consultorios con horarios y turnos ocupados
+	 * Obtener disponibilidad del profesional
+	 * Devuelve consultorios con horarios, turnos ocupados y bloqueos
 	 */
 	async getProfessionalAvailability(professionalId, startDate, endDate) {
-		const { Office, Schedule, Appointment } = await import('../database/models/index.js');
-
-		// Obtener todos los consultorios del profesional con sus horarios
 		const offices = await Office.findAll({
 			where: { professionalId },
 			include: [
@@ -347,26 +335,27 @@ class ProfessionalService {
 			],
 		});
 
-		// Obtener turnos ocupados en el rango de fechas
 		const whereClause = {
 			professionalId,
-			status: { [Op.in]: ['scheduled', 'confirmed'] },
+			status: { [Op.in]: ['pending', 'confirmed'] },
 		};
 
 		if (startDate && endDate) {
-			whereClause.date = {
-				[Op.between]: [startDate, endDate],
-			};
+			whereClause.date = { [Op.between]: [startDate, endDate] };
 		} else if (startDate) {
-			whereClause.date = {
-				[Op.gte]: startDate,
-			};
+			whereClause.date = { [Op.gte]: startDate };
 		}
 
 		const appointments = await Appointment.findAll({
 			where: whereClause,
 			attributes: ['id', 'officeId', 'date', 'time', 'duration'],
 			order: [['date', 'ASC'], ['time', 'ASC']],
+		});
+
+		// ✅ NUEVO: Obtener bloqueos para que el frontend oculte esos slots
+		const blocks = await officeBlockService.getByProfessional(professionalId, {
+			startDate,
+			endDate,
 		});
 
 		return {
@@ -384,6 +373,16 @@ class ProfessionalService {
 				date: apt.date,
 				time: apt.time,
 				duration: apt.duration,
+			})),
+			// ✅ NUEVO: El frontend usa esto para ocultar días/slots bloqueados
+			blocks: blocks.map(block => ({
+				id: block.id,
+				officeId: block.officeId,
+				date: block.date,
+				type: block.type,          // 'full_day' | 'time_range'
+				startTime: block.startTime, // null si full_day
+				endTime: block.endTime,     // null si full_day
+				reason: block.reason,
 			})),
 		};
 	}

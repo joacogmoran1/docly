@@ -7,22 +7,13 @@ import type {
   ApiMessageResponse,
 } from "@/shared/types/api";
 import type {
+  ChangeEmailFormValues,
   ChangePasswordFormValues,
   ForgotPasswordFormValues,
   LoginFormValues,
   RegisterFormValues,
   ResetPasswordFormValues,
 } from "@/modules/auth/types/auth-forms";
-
-function splitFullName(fullName: string) {
-  const trimmed = fullName.trim().replace(/\s+/g, " ");
-  const [name, ...lastNameParts] = trimmed.split(" ");
-
-  return {
-    name,
-    lastName: lastNameParts.join(" ") || undefined,
-  };
-}
 
 export async function login(values: LoginFormValues) {
   try {
@@ -39,12 +30,11 @@ export async function login(values: LoginFormValues) {
 
 export async function register(values: RegisterFormValues) {
   try {
-    const { name, lastName } = splitFullName(values.fullName);
     const response = await apiClient.post<ApiAuthResponse>("/auth/register", {
       email: values.email,
       password: values.password,
-      name,
-      lastName,
+      name: values.firstName,
+      lastName: values.lastName || undefined,
       phone: values.phone || undefined,
       role: values.role,
       specialty: values.role === "professional" ? values.specialty : undefined,
@@ -118,5 +108,18 @@ export async function changePassword(values: ChangePasswordFormValues) {
     return response.data.message;
   } catch (error) {
     throw new Error(getApiErrorMessage(error, "No se pudo cambiar la contrasena."));
+  }
+}
+
+export async function changeEmail(values: ChangeEmailFormValues) {
+  try {
+    const response = await apiClient.put<ApiMessageResponse>("/auth/change-email", {
+      newEmail: values.email,
+      password: values.password,
+    });
+
+    return response.data.message;
+  } catch (error) {
+    throw new Error(getApiErrorMessage(error, "No se pudo cambiar el mail."));
   }
 }
