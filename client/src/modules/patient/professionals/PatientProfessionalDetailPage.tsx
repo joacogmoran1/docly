@@ -278,6 +278,30 @@ export function PatientProfessionalDetailPage() {
       ),
     },
     {
+      value: "studies",
+      label: "Estudios",
+      content: (
+        <Card title="Estudios" className="panel-separated">
+          <div className="plain-list">
+            {query.data.studies.map((item) => (
+              <div key={item.id} className="list-row">
+                <div className="stack-sm">
+                  <strong>{item.title}</strong>
+                  <span className="meta">{item.reportSummary}</span>
+                </div>
+                <Link to={`/patient/studies/${item.id}`}>
+                  <Button variant="ghost">Ver</Button>
+                </Link>
+              </div>
+            ))}
+            {!query.data.studies.length ? (
+              <span className="meta">Todavia no hay estudios cargados por este profesional.</span>
+            ) : null}
+          </div>
+        </Card>
+      ),
+    },
+    {
       value: "prescriptions",
       label: "Recetas",
       content: (

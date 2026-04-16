@@ -2,124 +2,138 @@ import { apiClient } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/errors";
 import { mapApiUserToSessionUser } from "@/services/api/mappers";
 import type {
-  ApiAuthProfileResponse,
-  ApiAuthResponse,
-  ApiMessageResponse,
+	ApiAuthProfileResponse,
+	ApiAuthResponse,
+	ApiMessageResponse,
 } from "@/shared/types/api";
 import type {
-  ChangeEmailFormValues,
-  ChangePasswordFormValues,
-  ForgotPasswordFormValues,
-  LoginFormValues,
-  RegisterFormValues,
-  ResetPasswordFormValues,
+	ChangeEmailFormValues,
+	ChangePasswordFormValues,
+	ForgotPasswordFormValues,
+	LoginFormValues,
+	RegisterFormValues,
+	ResetPasswordFormValues,
 } from "@/modules/auth/types/auth-forms";
 
 export async function login(values: LoginFormValues) {
-  try {
-    const response = await apiClient.post<ApiAuthResponse>("/auth/login", {
-      email: values.email,
-      password: values.password,
-    });
+	try {
+		const response = await apiClient.post<ApiAuthResponse>("/auth/login", {
+			email: values.email,
+			password: values.password,
+		});
 
-    return mapApiUserToSessionUser(response.data.user);
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo iniciar sesion."));
-  }
+		return mapApiUserToSessionUser(response.data.user);
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo iniciar sesion."));
+	}
 }
 
 export async function register(values: RegisterFormValues) {
-  try {
-    const response = await apiClient.post<ApiAuthResponse>("/auth/register", {
-      email: values.email,
-      password: values.password,
-      name: values.firstName,
-      lastName: values.lastName || undefined,
-      phone: values.phone || undefined,
-      role: values.role,
-      specialty: values.role === "professional" ? values.specialty : undefined,
-      licenseNumber: values.role === "professional" ? values.license : undefined,
-    });
+	try {
+		const response = await apiClient.post<ApiAuthResponse>("/auth/register", {
+			email: values.email,
+			password: values.password,
+			name: values.firstName,
+			lastName: values.lastName || undefined,
+			phone: values.phone || undefined,
+			role: values.role,
+			document: values.document || undefined,
+			acceptedTerms: values.acceptedTerms,
+			specialty: values.role === "professional" ? values.specialty : undefined,
+			licenseNumber: values.role === "professional" ? values.license : undefined,
+		});
 
-    return mapApiUserToSessionUser(response.data.user);
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo crear la cuenta."));
-  }
+		return mapApiUserToSessionUser(response.data.user);
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo crear la cuenta."));
+	}
 }
 
 export async function getCurrentSessionUser() {
-  try {
-    const response = await apiClient.get<ApiAuthProfileResponse>("/auth/profile", {
-      skipSessionClear: true,
-    } as never);
+	try {
+		const response = await apiClient.get<ApiAuthProfileResponse>("/auth/profile", {
+			skipSessionClear: true,
+		} as never);
 
-    return mapApiUserToSessionUser(response.data.user);
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo restaurar la sesion."));
-  }
+		return mapApiUserToSessionUser(response.data.user);
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo restaurar la sesion."));
+	}
 }
 
 export async function logout() {
-  try {
-    await apiClient.post<ApiMessageResponse>("/auth/logout");
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo cerrar la sesion."));
-  }
+	try {
+		await apiClient.post<ApiMessageResponse>("/auth/logout");
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo cerrar la sesion."));
+	}
 }
 
-export async function requestPasswordReset(_values: ForgotPasswordFormValues) {
-  try {
-    const response = await apiClient.post<ApiMessageResponse>("/auth/forgot-password", {
-      email: _values.email,
-    });
+export async function requestPasswordReset(values: ForgotPasswordFormValues) {
+	try {
+		const response = await apiClient.post<ApiMessageResponse>("/auth/forgot-password", {
+			email: values.email,
+		});
 
-    return {
-      message: response.data.message,
-      resetToken: response.data.resetToken,
-      resetLink: response.data.resetLink,
-    };
-  } catch (error) {
-    throw new Error(
-      getApiErrorMessage(error, "No se pudo iniciar la recuperacion de contrasena."),
-    );
-  }
+		return {
+			message: response.data.message,
+			resetToken: response.data.resetToken,
+			resetLink: response.data.resetLink,
+		};
+	} catch (error) {
+		throw new Error(
+			getApiErrorMessage(error, "No se pudo iniciar la recuperacion de contrasena."),
+		);
+	}
 }
 
 export async function resetPassword(token: string, values: ResetPasswordFormValues) {
-  try {
-    const response = await apiClient.post<ApiMessageResponse>("/auth/reset-password", {
-      token,
-      password: values.password,
-    });
+	try {
+		const response = await apiClient.post<ApiMessageResponse>("/auth/reset-password", {
+			token,
+			password: values.password,
+		});
 
-    return response.data.message;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo restablecer la contrasena."));
-  }
+		return response.data.message;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo restablecer la contrasena."));
+	}
 }
 
 export async function changePassword(values: ChangePasswordFormValues) {
-  try {
-    const response = await apiClient.post<ApiMessageResponse>("/auth/change-password", {
-      currentPassword: values.currentPassword,
-      newPassword: values.newPassword,
-    });
+	try {
+		const response = await apiClient.post<ApiMessageResponse>("/auth/change-password", {
+			currentPassword: values.currentPassword,
+			newPassword: values.newPassword,
+		});
 
-    return response.data.message;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo cambiar la contrasena."));
-  }
+		return response.data.message;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo cambiar la contrasena."));
+	}
 }
 
 export async function changeEmail(values: ChangeEmailFormValues) {
-  try {
-    const response = await apiClient.put<ApiMessageResponse>("/auth/change-email", {
-      newEmail: values.email,
-      password: values.password,
-    });
+	try {
+		const response = await apiClient.put<ApiMessageResponse>("/auth/change-email", {
+			newEmail: values.email,
+			password: values.password,
+		});
 
-    return response.data.message;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo cambiar el mail."));
-  }
+		return response.data.message;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo cambiar el mail."));
+	}
+}
+
+export async function deleteAccount(password: string) {
+	try {
+		const response = await apiClient.delete<ApiMessageResponse>("/auth/account", {
+			data: { password },
+		});
+
+		return response.data.message;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo eliminar la cuenta."));
+	}
 }

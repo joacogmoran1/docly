@@ -10,13 +10,16 @@ import Prescription from './Prescription.js';
 import Study from './Study.js';
 import MedicalRecord from './MedicalRecord.js';
 import PatientProfessional from './PatientProfessional.js';
+import RefreshToken from './RefreshToken.js';
 
 // User associations
 User.hasOne(Patient, { foreignKey: 'userId', as: 'patient' });
 User.hasOne(Professional, { foreignKey: 'userId', as: 'professional' });
+User.hasMany(RefreshToken, { foreignKey: 'userId', as: 'refreshTokens' });
 
 Patient.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Professional.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+RefreshToken.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 // Patient associations
 Patient.hasOne(HealthInfo, { foreignKey: 'patientId', as: 'healthInfo' });
@@ -88,4 +91,5 @@ export {
 	Study,
 	MedicalRecord,
 	PatientProfessional,
+	RefreshToken,
 };

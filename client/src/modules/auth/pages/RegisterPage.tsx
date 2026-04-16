@@ -86,7 +86,7 @@ export function RegisterPage() {
       </div>
 
       <div className="stepper auth-stepper">
-        {[...steps, "Confirmar"].map((label, index) => (
+        {steps.map((label, index) => (
           <span key={label} className={`step-pill${index === step ? " active" : ""}`}>
             {index + 1}. {label}
           </span>
@@ -183,35 +183,23 @@ export function RegisterPage() {
           </>
         ) : null}
 
-        {step === 3 ? (
-          <div className="auth-confirmation-minimal">
-            <strong className="title-md">Cuenta creada</strong>
-            <p className="meta">Tu cuenta ya esta lista. Ahora podes iniciar sesion.</p>
-            <Button type="button" fullWidth onClick={() => navigate("/auth/login", { replace: true })}>
-              Ir al login
-            </Button>
-          </div>
-        ) : null}
-
         {serverError ? <span className="field-error">{serverError}</span> : null}
 
-        {step < 3 ? (
-          <div className="form-actions auth-form-actions">
-            {step > 0 ? (
-              <Button type="button" variant="ghost" onClick={() => setStep((current) => current - 1)}>
-                Volver
-              </Button>
-            ) : null}
-
-            <Button type="button" onClick={goNext} disabled={isSubmitting}>
-              {step === steps.length - 1
-                ? isSubmitting
-                  ? "Creando cuenta..."
-                  : "Crear cuenta"
-                : "Continuar"}
+        <div className="form-actions auth-form-actions">
+          {step > 0 ? (
+            <Button type="button" variant="ghost" onClick={() => setStep((current) => current - 1)}>
+              Volver
             </Button>
-          </div>
-        ) : null}
+          ) : null}
+
+          <Button type="button" onClick={goNext} disabled={isSubmitting}>
+            {step === steps.length - 1
+              ? isSubmitting
+                ? "Creando cuenta..."
+                : "Crear cuenta"
+              : "Continuar"}
+          </Button>
+        </div>
       </form>
     </div>
   );

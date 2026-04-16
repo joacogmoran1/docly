@@ -24,6 +24,10 @@ router.post('/login', authLimiter, loginValidator, validate, authController.logi
 // Logout
 router.post('/logout', authController.logout);
 
+// Refresh token — renueva access token usando el refresh token httpOnly cookie.
+// Rate limiting para prevenir abuso (más permisivo que login).
+router.post('/refresh', authLimiter, authController.refresh);
+
 // Perfil del usuario autenticado
 router.get('/profile', protect, authController.getProfile);
 

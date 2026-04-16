@@ -14,7 +14,6 @@ export const create = catchAsync(async (req, res) => {
 	let appointmentData;
 
 	if (role === 'professional') {
-		// El profesional agenda: debe enviar patientId en el body
 		if (!req.body.patientId) {
 			throw new ApiError(400, 'patientId es requerido cuando el profesional agenda un turno.');
 		}
@@ -24,7 +23,6 @@ export const create = catchAsync(async (req, res) => {
 			createdBy: 'professional',
 		};
 	} else {
-		// El paciente agenda: debe enviar professionalId en el body
 		if (!req.body.professionalId) {
 			throw new ApiError(400, 'professionalId es requerido cuando el paciente agenda un turno.');
 		}
@@ -45,7 +43,6 @@ export const create = catchAsync(async (req, res) => {
 // =========================================================================
 
 export const confirm = catchAsync(async (req, res) => {
-	// Verificar que el paciente es el dueño del turno
 	const appointment = await appointmentService.getById(req.params.id);
 
 	if (appointment.patientId !== req.user.patient?.id) {
@@ -64,7 +61,6 @@ export const confirm = catchAsync(async (req, res) => {
 export const cancel = catchAsync(async (req, res) => {
 	const appointment = await appointmentService.getById(req.params.id);
 
-	// Solo el profesional o el paciente del turno pueden cancelar
 	const isProfessional = appointment.professionalId === req.user.professional?.id;
 	const isPatient = appointment.patientId === req.user.patient?.id;
 
@@ -89,22 +85,6 @@ export const complete = catchAsync(async (req, res) => {
 	}
 
 	const updated = await appointmentService.complete(req.params.id);
-
-	res.status(200).json({ success: true, data: updated });
-});
-
-// =========================================================================
-// REPROGRAMAR (profesional cambia fecha/hora → vuelve a 'pending')
-// =========================================================================
-
-export const reschedule = catchAsync(async (req, res) => {
-	const appointment = await appointmentService.getById(req.params.id);
-
-	if (appointment.professionalId !== req.user.professional?.id) {
-		throw new ApiError(403, 'Solo el profesional asignado puede reprogramar este turno.');
-	}
-
-	const updated = await appointmentService.reschedule(req.params.id, req.body);
 
 	res.status(200).json({ success: true, data: updated });
 });

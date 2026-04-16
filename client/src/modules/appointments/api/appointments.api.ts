@@ -1,112 +1,97 @@
 import { apiClient } from "@/services/api/client";
 import { getApiErrorMessage } from "@/services/api/errors";
 import type {
-  ApiAppointmentListResponse,
-  ApiAppointmentResponse,
+	ApiAppointmentListResponse,
+	ApiAppointmentResponse,
 } from "@/shared/types/api";
 
 interface ProfessionalAppointmentFilters {
-  date?: string;
-  status?: "pending" | "confirmed" | "completed" | "cancelled";
+	date?: string;
+	status?: "pending" | "confirmed" | "completed" | "cancelled";
 }
 
 interface CreateAppointmentInput {
-  patientId?: string;
-  professionalId?: string;
-  officeId: string;
-  date: string;
-  time: string;
-  duration?: number;
-  reason?: string;
+	patientId?: string;
+	professionalId?: string;
+	officeId: string;
+	date: string;
+	time: string;
+	duration?: number;
+	reason?: string;
 }
 
 export async function getPatientAppointments(patientId: string) {
-  try {
-    const response = await apiClient.get<ApiAppointmentListResponse>(
-      `/appointments/patient/${patientId}`,
-    );
-    return response.data.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudieron cargar los turnos del paciente."));
-  }
+	try {
+		const response = await apiClient.get<ApiAppointmentListResponse>(
+			`/appointments/patient/${patientId}`,
+		);
+		return response.data.data;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudieron cargar los turnos del paciente."));
+	}
 }
 
 export async function getProfessionalAppointments(
-  professionalId: string,
-  filters?: ProfessionalAppointmentFilters,
+	professionalId: string,
+	filters?: ProfessionalAppointmentFilters,
 ) {
-  try {
-    const response = await apiClient.get<ApiAppointmentListResponse>(
-      `/appointments/professional/${professionalId}`,
-      {
-        params: filters,
-      },
-    );
-    return response.data.data;
-  } catch (error) {
-    throw new Error(
-      getApiErrorMessage(error, "No se pudieron cargar los turnos del profesional."),
-    );
-  }
+	try {
+		const response = await apiClient.get<ApiAppointmentListResponse>(
+			`/appointments/professional/${professionalId}`,
+			{
+				params: filters,
+			},
+		);
+		return response.data.data;
+	} catch (error) {
+		throw new Error(
+			getApiErrorMessage(error, "No se pudieron cargar los turnos del profesional."),
+		);
+	}
 }
 
 export async function createAppointment(input: CreateAppointmentInput) {
-  try {
-    const response = await apiClient.post<ApiAppointmentResponse>("/appointments", input);
-    return response.data.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo crear el turno."));
-  }
+	try {
+		const response = await apiClient.post<ApiAppointmentResponse>("/appointments", input);
+		return response.data.data;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo crear el turno."));
+	}
 }
 
 export async function cancelAppointment(id: string, reason?: string) {
-  try {
-    const response = await apiClient.post<ApiAppointmentResponse>(
-      `/appointments/${id}/cancel`,
-      {
-        reason,
-      },
-    );
+	try {
+		const response = await apiClient.post<ApiAppointmentResponse>(
+			`/appointments/${id}/cancel`,
+			{
+				reason,
+			},
+		);
 
-    return response.data.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo cancelar el turno."));
-  }
+		return response.data.data;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo cancelar el turno."));
+	}
 }
 
 export async function confirmAppointment(id: string) {
-  try {
-    const response = await apiClient.post<ApiAppointmentResponse>(
-      `/appointments/${id}/confirm`,
-    );
-    return response.data.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo confirmar el turno."));
-  }
+	try {
+		const response = await apiClient.post<ApiAppointmentResponse>(
+			`/appointments/${id}/confirm`,
+		);
+		return response.data.data;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo confirmar el turno."));
+	}
 }
 
 export async function completeAppointment(id: string) {
-  try {
-    const response = await apiClient.post<ApiAppointmentResponse>(
-      `/appointments/${id}/complete`,
-    );
-    return response.data.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo completar el turno."));
-  }
-}
-
-export async function rescheduleAppointment(
-  id: string,
-  input: { date: string; time: string; duration?: number; reason?: string },
-) {
-  try {
-    const response = await apiClient.post<ApiAppointmentResponse>(
-      `/appointments/${id}/reschedule`,
-      input,
-    );
-    return response.data.data;
-  } catch (error) {
-    throw new Error(getApiErrorMessage(error, "No se pudo reprogramar el turno."));
-  }
+	try {
+		const response = await apiClient.post<ApiAppointmentResponse>(
+			`/appointments/${id}/complete`,
+		);
+		return response.data.data;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, "No se pudo completar el turno."));
+	}
 }

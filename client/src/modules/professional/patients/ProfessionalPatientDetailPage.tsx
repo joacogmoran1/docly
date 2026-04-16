@@ -6,9 +6,11 @@ import { useAuth } from "@/app/providers/AuthProvider";
 import { getProfessionalPatientDetail } from "@/modules/professional/api/professional.api";
 import { ConsultationRecordComposer } from "@/modules/professional/patients/ConsultationRecordComposer";
 import { PrescriptionComposer } from "@/modules/professional/prescriptions/PrescriptionComposer";
+import { mapApiAppointmentStatus, toDateTimeIso } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { Card } from "@/shared/ui/Card";
 import { Button } from "@/shared/ui/Button";
+import { formatNumericDate, formatNumericTime } from "@/shared/utils/date";
 
 export function ProfessionalPatientDetailPage() {
   const { user } = useAuth();
@@ -122,6 +124,38 @@ export function ProfessionalPatientDetailPage() {
             </Card>
           )}
         </div>
+      ),
+    },
+    {
+      value: "appointments",
+      label: "Turnos",
+      content: (
+        <Card title="Historial de turnos" className="panel-separated">
+          <div className="plain-list">
+            {query.data.appointments.map((appointment) => {
+              const dateTime = toDateTimeIso(appointment.date, appointment.time);
+
+              return (
+                <div key={appointment.id} className="list-row">
+                  <div className="stack-sm">
+                    <strong>
+                      {formatNumericDate(dateTime)} a las {formatNumericTime(dateTime)}
+                    </strong>
+                    <span className="meta">{appointment.office?.name ?? "Consultorio"}</span>
+                    <span className="meta">{appointment.reason ?? "Consulta"}</span>
+                    <span className="meta">Estado: {mapApiAppointmentStatus(appointment.status)}</span>
+                    {appointment.cancellationReason ? (
+                      <span className="meta">Motivo de cancelacion: {appointment.cancellationReason}</span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+            {!query.data.appointments.length ? (
+              <span className="meta">Todavia no hay turnos registrados con este paciente.</span>
+            ) : null}
+          </div>
+        </Card>
       ),
     },
     {

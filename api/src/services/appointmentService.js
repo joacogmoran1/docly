@@ -1,4 +1,3 @@
-// src/services/appointmentService.js
 import { Appointment, Patient, Professional, Office, User } from '../database/models/index.js';
 import officeBlockService from './officeBlockService.js';
 import ApiError from '../utils/ApiError.js';
@@ -17,9 +16,6 @@ import sequelize from '../config/database.js';
  * completed: consulta finalizada (profesional)
  * cancelled: cancelado por cualquiera
  */
-
-// Estados que ocupan un slot (bloquean horario)
-const ACTIVE_STATUSES = ['pending', 'confirmed'];
 
 class AppointmentService {
 	// =========================================================================
@@ -70,8 +66,6 @@ class AppointmentService {
 
 	// =========================================================================
 	// CREAR TURNO
-	// - createdBy 'professional' → status 'pending' (paciente debe confirmar)
-	// - createdBy 'patient'      → status 'confirmed' (el paciente ya eligió)
 	// =========================================================================
 
 	async create(appointmentData) {
@@ -180,56 +174,6 @@ class AppointmentService {
 		}
 
 		await appointment.update({ status: 'completed' });
-
-		return await this.getById(appointmentId);
-	}
-
-	// =========================================================================
-	// REPROGRAMAR (profesional cambia fecha/hora → vuelve a 'pending')
-	// =========================================================================
-
-	async reschedule(appointmentId, { date, time }) {
-		const appointment = await this._findOrFail(appointmentId);
-
-		if (['completed', 'cancelled'].includes(appointment.status)) {
-			throw new ApiError(400, `No se puede reprogramar un turno con estado "${appointment.status}".`);
-		}
-
-		const newDate = date || appointment.date;
-		const newTime = time || appointment.time;
-		const dur = appointment.duration || 30;
-
-		// No reprogramar al pasado
-		const newDateTime = new Date(`${newDate}T${newTime}`);
-		if (newDateTime <= new Date()) {
-			throw new ApiError(400, 'No se puede reprogramar un turno a una fecha y hora pasada.');
-		}
-
-		// Verificar bloqueo
-		const isBlocked = await officeBlockService.isBlocked(appointment.officeId, newDate, newTime);
-		if (isBlocked) {
-			throw new ApiError(400, 'El nuevo horario no está disponible (bloqueado).');
-		}
-
-		// Verificar solapamiento
-		const conflict = await this._hasTimeConflict({
-			date: newDate,
-			time: newTime,
-			duration: dur,
-			professionalId: appointment.professionalId,
-			officeId: appointment.officeId,
-			excludeId: appointmentId,
-		});
-		if (conflict) {
-			throw new ApiError(400, 'Ya existe un turno que se superpone con el nuevo horario.');
-		}
-
-		// Reprogramar → vuelve a pending, el paciente debe re-confirmar
-		await appointment.update({
-			date: newDate,
-			time: newTime,
-			status: 'pending',
-		});
 
 		return await this.getById(appointmentId);
 	}

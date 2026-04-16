@@ -1,5 +1,5 @@
 import { Professional, User, Patient, PatientProfessional, Appointment, Prescription, MedicalRecord, Study, Office, Schedule } from '../database/models/index.js';
-import officeBlockService from './officeBlockService.js'; // ✅ NUEVO
+import officeBlockService from './officeBlockService.js';
 import ApiError from '../utils/ApiError.js';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
@@ -33,10 +33,30 @@ class ProfessionalService {
 						}
 						: {},
 				},
+				{
+					association: 'offices',
+					include: [
+						{
+							model: Schedule,
+							as: 'schedules',
+							where: { isActive: true },
+							required: false,
+						},
+					],
+				},
 			],
 		});
 
-		return professionals;
+		// Calcular next available para cada profesional
+		const results = await Promise.all(
+			professionals.map(async (prof) => {
+				const plain = prof.toJSON();
+				plain.nextAvailable = await this._calculateNextAvailable(prof.id, prof.offices || []);
+				return plain;
+			})
+		);
+
+		return results;
 	}
 
 	async getById(professionalId) {
@@ -65,7 +85,11 @@ class ProfessionalService {
 			throw new ApiError(404, 'Profesional no encontrado.');
 		}
 
-		return professional;
+		// Calcular next available
+		const plain = professional.toJSON();
+		plain.nextAvailable = await this._calculateNextAvailable(professionalId, professional.offices || []);
+
+		return plain;
 	}
 
 	async updateProfile(professionalId, updateData) {
@@ -135,10 +159,30 @@ class ProfessionalService {
 					association: 'user',
 					attributes: ['id', 'name', 'lastName', 'email', 'phone'],
 				},
+				{
+					association: 'offices',
+					include: [
+						{
+							model: Schedule,
+							as: 'schedules',
+							where: { isActive: true },
+							required: false,
+						},
+					],
+				},
 			],
 		});
 
-		return professionals;
+		// Calcular next available para cada profesional
+		const results = await Promise.all(
+			professionals.map(async (prof) => {
+				const plain = prof.toJSON();
+				plain.nextAvailable = await this._calculateNextAvailable(prof.id, prof.offices || []);
+				return plain;
+			})
+		);
+
+		return results;
 	}
 
 	/**
@@ -352,7 +396,6 @@ class ProfessionalService {
 			order: [['date', 'ASC'], ['time', 'ASC']],
 		});
 
-		// ✅ NUEVO: Obtener bloqueos para que el frontend oculte esos slots
 		const blocks = await officeBlockService.getByProfessional(professionalId, {
 			startDate,
 			endDate,
@@ -374,17 +417,153 @@ class ProfessionalService {
 				time: apt.time,
 				duration: apt.duration,
 			})),
-			// ✅ NUEVO: El frontend usa esto para ocultar días/slots bloqueados
 			blocks: blocks.map(block => ({
 				id: block.id,
 				officeId: block.officeId,
 				date: block.date,
-				type: block.type,          // 'full_day' | 'time_range'
-				startTime: block.startTime, // null si full_day
-				endTime: block.endTime,     // null si full_day
+				type: block.type,
+				startTime: block.startTime,
+				endTime: block.endTime,
 				reason: block.reason,
 			})),
 		};
+	}
+
+	// =========================================================================
+	// CALCULAR PRÓXIMO TURNO DISPONIBLE
+	// =========================================================================
+
+	/**
+	 * Calcula el próximo slot libre de un profesional mirando sus consultorios,
+	 * horarios, turnos existentes y bloqueos. Busca hasta 30 días en el futuro.
+	 *
+	 * Retorna ISO string del próximo slot libre, o null si no hay disponibilidad.
+	 */
+	async _calculateNextAvailable(professionalId, offices) {
+		try {
+			if (!offices || offices.length === 0) return null;
+
+			const now = new Date();
+			const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+			const maxDate = new Date(today);
+			maxDate.setDate(maxDate.getDate() + 30);
+
+			const todayStr = this._formatDate(today);
+			const maxDateStr = this._formatDate(maxDate);
+
+			// Obtener turnos activos en el rango
+			const activeAppointments = await Appointment.findAll({
+				where: {
+					professionalId,
+					status: { [Op.in]: ['pending', 'confirmed'] },
+					date: { [Op.between]: [todayStr, maxDateStr] },
+				},
+				attributes: ['officeId', 'date', 'time', 'duration'],
+				raw: true,
+			});
+
+			// Obtener bloqueos en el rango
+			const blocks = await officeBlockService.getByProfessional(professionalId, {
+				startDate: todayStr,
+				endDate: maxDateStr,
+			});
+
+			// Indexar turnos y bloqueos por officeId+date para lookup rápido
+			const appointmentIndex = new Map();
+			for (const apt of activeAppointments) {
+				const key = `${apt.officeId}:${apt.date}`;
+				if (!appointmentIndex.has(key)) appointmentIndex.set(key, []);
+				appointmentIndex.get(key).push(apt.time.slice(0, 5));
+			}
+
+			const fullDayBlocks = new Set();
+			const timeRangeBlocks = new Map();
+			for (const block of blocks) {
+				const key = `${block.officeId}:${block.date}`;
+				if (block.type === 'full_day') {
+					fullDayBlocks.add(key);
+				} else if (block.startTime && block.endTime) {
+					if (!timeRangeBlocks.has(key)) timeRangeBlocks.set(key, []);
+					timeRangeBlocks.get(key).push({
+						start: block.startTime.slice(0, 5),
+						end: block.endTime.slice(0, 5),
+					});
+				}
+			}
+
+			// Iterar día por día, consultorio por consultorio
+			for (let d = new Date(today); d <= maxDate; d.setDate(d.getDate() + 1)) {
+				const dateStr = this._formatDate(d);
+				const jsDayOfWeek = d.getDay();
+
+				for (const office of offices) {
+					const schedules = (office.schedules || office.dataValues?.schedules || [])
+						.filter(s => s.isActive && s.dayOfWeek === jsDayOfWeek);
+
+					if (!schedules.length) continue;
+
+					const key = `${office.id}:${dateStr}`;
+					if (fullDayBlocks.has(key)) continue;
+
+					const bookedTimes = new Set(appointmentIndex.get(key) || []);
+					const blockedRanges = timeRangeBlocks.get(key) || [];
+
+					for (const schedule of schedules) {
+						const slots = this._buildTimeSlots(
+							schedule.startTime,
+							schedule.endTime,
+							office.appointmentDuration || 30,
+						);
+
+						for (const slot of slots) {
+							// Skip si es hoy y el slot ya pasó
+							if (dateStr === todayStr) {
+								const slotTime = new Date(`${dateStr}T${slot}:00`);
+								if (slotTime <= now) continue;
+							}
+
+							if (bookedTimes.has(slot)) continue;
+
+							const isBlocked = blockedRanges.some(
+								range => slot >= range.start && slot < range.end
+							);
+							if (isBlocked) continue;
+
+							// Encontramos el primer slot libre
+							return `${dateStr}T${slot}:00`;
+						}
+					}
+				}
+			}
+
+			return null;
+		} catch (error) {
+			// No fallar la operación padre por un cálculo secundario
+			return null;
+		}
+	}
+
+	_formatDate(date) {
+		const y = date.getFullYear();
+		const m = String(date.getMonth() + 1).padStart(2, '0');
+		const d = String(date.getDate()).padStart(2, '0');
+		return `${y}-${m}-${d}`;
+	}
+
+	_buildTimeSlots(startTime, endTime, durationMinutes) {
+		const result = [];
+		const [sh, sm] = startTime.slice(0, 5).split(':').map(Number);
+		const [eh, em] = endTime.slice(0, 5).split(':').map(Number);
+		const start = sh * 60 + sm;
+		const end = eh * 60 + em;
+
+		for (let cur = start; cur + durationMinutes <= end; cur += durationMinutes) {
+			const h = Math.floor(cur / 60);
+			const m = cur % 60;
+			result.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+		}
+
+		return result;
 	}
 }
 

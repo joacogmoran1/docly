@@ -1,28 +1,83 @@
 import jwt from 'jsonwebtoken';
-import { User, Patient, Professional } from '../database/models/index.js';
+import crypto from 'crypto';
+import { User, Patient, Professional, RefreshToken } from '../database/models/index.js';
 import PasswordResetToken from '../database/models/PasswordResetToken.js';
 import { jwtConfig } from '../config/jwt.js';
+import emailService from './emailService.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../utils/logger.js';
 
 class AuthService {
-	generateToken(userId) {
-		return jwt.sign({ id: userId }, jwtConfig.secret, {
-			expiresIn: jwtConfig.expiresIn,
-		});
-	}
+	// =========================================================================
+	// TOKENS
+	// =========================================================================
 
-	// Refresh token con expiración más larga y payload diferenciado
-	generateRefreshToken(userId) {
+	/**
+	 * Access token — corta vida, se envía en cada request vía httpOnly cookie.
+	 */
+	generateAccessToken(userId) {
 		return jwt.sign(
-			{ id: userId, type: 'refresh' },
+			{ id: userId, type: 'access' },
 			jwtConfig.secret,
-			{ expiresIn: '30d' }
+			{ expiresIn: jwtConfig.accessExpiresIn }
 		);
 	}
 
+	/**
+	 * Refresh token — larga vida, almacenado en DB para revocación.
+	 * El jti del JWT coincide con RefreshToken.id en la DB.
+	 */
+	async generateRefreshToken(userId, family) {
+		const tokenFamily = family || crypto.randomUUID();
+		const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 días
+
+		const dbToken = await RefreshToken.create({
+			userId,
+			family: tokenFamily,
+			expiresAt,
+		});
+
+		const token = jwt.sign(
+			{ id: userId, type: 'refresh', jti: dbToken.id, family: tokenFamily },
+			jwtConfig.secret,
+			{ expiresIn: jwtConfig.refreshExpiresIn }
+		);
+
+		return { token, dbToken };
+	}
+
+	/**
+	 * Setea ambas cookies (access + refresh) en la response.
+	 */
+	async setAuthCookies(res, userId, existingFamily) {
+		const accessToken = this.generateAccessToken(userId);
+		const { token: refreshToken } = await this.generateRefreshToken(userId, existingFamily);
+
+		res.cookie('token', accessToken, jwtConfig.accessCookieOptions);
+		res.cookie('refresh_token', refreshToken, jwtConfig.refreshCookieOptions);
+
+		return { accessToken, refreshToken };
+	}
+
+	/**
+	 * Limpia ambas cookies de auth.
+	 */
+	clearAuthCookies(res) {
+		res.clearCookie('token', { path: '/' });
+		res.clearCookie('refresh_token', { path: '/api/auth' });
+	}
+
+	// =========================================================================
+	// REGISTRO
+	// =========================================================================
+
 	async register(userData) {
-		const { email, password, name, lastName, phone, role } = userData;
+		const { email, password, name, lastName, phone, role, document: dni, acceptedTerms } = userData;
+
+		// Validar aceptación de términos
+		if (!acceptedTerms) {
+			throw new ApiError(400, 'Debes aceptar los términos y condiciones para registrarte.');
+		}
 
 		// Verificar si el usuario ya existe
 		const existingUser = await User.findOne({ where: { email } });
@@ -30,7 +85,7 @@ class AuthService {
 			throw new ApiError(400, 'El email ya está registrado.');
 		}
 
-		// Crear usuario
+		// Crear usuario con timestamp de aceptación de términos
 		const user = await User.create({
 			email,
 			password,
@@ -38,11 +93,15 @@ class AuthService {
 			lastName,
 			phone,
 			role,
+			acceptedTermsAt: new Date(),
 		});
 
 		// Crear perfil según el rol
 		if (role === 'patient') {
-			await Patient.create({ userId: user.id });
+			await Patient.create({
+				userId: user.id,
+				dni: dni || null,
+			});
 		} else if (role === 'professional') {
 			const { specialty, licenseNumber } = userData;
 
@@ -65,16 +124,16 @@ class AuthService {
 			],
 		});
 
-		// Retornar token como string (lo que espera el controller)
-		const token = this.generateToken(user.id);
 		const authenticatedUser = userWithRelations?.toJSON() || user.toJSON();
 
-		return { user: authenticatedUser, token };
+		return { user: authenticatedUser };
 	}
 
-	// Removida la anotación TypeScript `: Promise<LoginResponse>`
+	// =========================================================================
+	// LOGIN
+	// =========================================================================
+
 	async login(email, password) {
-		// Buscar usuario con relaciones
 		const user = await User.findOne({
 			where: { email },
 			include: [
@@ -87,19 +146,111 @@ class AuthService {
 			throw new ApiError(401, 'Credenciales incorrectas.');
 		}
 
-		// Verificar password
 		const isPasswordValid = await user.comparePassword(password);
-
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Credenciales incorrectas.');
 		}
 
-		// Retornar token como string (lo que espera el controller)
-		const token = this.generateToken(user.id);
 		const authenticatedUser = user.toJSON();
 
-		return { user: authenticatedUser, token };
+		return { user: authenticatedUser };
 	}
+
+	// =========================================================================
+	// REFRESH TOKEN
+	// =========================================================================
+
+	/**
+	 * Valida el refresh token JWT, verifica contra DB, y rota el token.
+	 *
+	 * Implementa refresh token rotation con detección de reutilización:
+	 * - Si el token ya fue revocado → toda la familia se revoca (compromiso detectado).
+	 * - Si es válido → se revoca el actual y se emite uno nuevo en la misma familia.
+	 */
+	async refreshSession(refreshTokenJwt) {
+		if (!refreshTokenJwt) {
+			throw new ApiError(401, 'No hay refresh token.');
+		}
+
+		// Verificar firma y expiración del JWT
+		let decoded;
+		try {
+			decoded = jwt.verify(refreshTokenJwt, jwtConfig.secret);
+		} catch (error) {
+			throw new ApiError(401, 'Refresh token inválido o expirado.');
+		}
+
+		if (decoded.type !== 'refresh' || !decoded.jti) {
+			throw new ApiError(401, 'Token inválido.');
+		}
+
+		// Buscar en DB
+		const dbToken = await RefreshToken.findByPk(decoded.jti);
+
+		if (!dbToken) {
+			throw new ApiError(401, 'Refresh token no encontrado.');
+		}
+
+		// ── Detección de reutilización ──
+		// Si el token ya fue revocado, alguien lo está reutilizando → compromiso.
+		if (dbToken.revokedAt) {
+			logger.warn(`⚠️ Refresh token reutilizado detectado — revocando familia ${dbToken.family} del usuario ${dbToken.userId}`);
+			await RefreshToken.revokeFamily(dbToken.family);
+			throw new ApiError(401, 'Sesión comprometida. Inicia sesión nuevamente.');
+		}
+
+		// Verificar que no expiró en DB
+		if (new Date() > dbToken.expiresAt) {
+			await RefreshToken.revokeById(dbToken.id);
+			throw new ApiError(401, 'Refresh token expirado.');
+		}
+
+		// Verificar que el usuario sigue activo
+		const user = await User.findByPk(dbToken.userId, {
+			include: [
+				{ association: 'professional', required: false },
+				{ association: 'patient', required: false },
+			],
+		});
+
+		if (!user || !user.isActive) {
+			await RefreshToken.revokeFamily(dbToken.family);
+			throw new ApiError(401, 'Usuario inactivo.');
+		}
+
+		// ── Rotación: revocar el actual, emitir nuevo en la misma familia ──
+		await RefreshToken.revokeById(dbToken.id);
+
+		return {
+			user: user.toJSON(),
+			family: dbToken.family,
+		};
+	}
+
+	// =========================================================================
+	// LOGOUT
+	// =========================================================================
+
+	async logout(refreshTokenJwt) {
+		if (!refreshTokenJwt) return;
+
+		try {
+			const decoded = jwt.verify(refreshTokenJwt, jwtConfig.secret);
+			if (decoded.jti) {
+				const dbToken = await RefreshToken.findByPk(decoded.jti);
+				if (dbToken) {
+					// Revocar toda la familia (logout del dispositivo)
+					await RefreshToken.revokeFamily(dbToken.family);
+				}
+			}
+		} catch {
+			// Token ya expirado o inválido — no pasa nada, las cookies se limpian igual.
+		}
+	}
+
+	// =========================================================================
+	// PERFIL
+	// =========================================================================
 
 	async getProfile(userId) {
 		const user = await User.findByPk(userId, {
@@ -116,38 +267,44 @@ class AuthService {
 		return user.toJSON();
 	}
 
+	// =========================================================================
+	// RECUPERACIÓN DE CONTRASEÑA
+	// =========================================================================
+
 	async forgotPassword(email) {
 		const user = await User.findOne({ where: { email } });
 
 		if (!user) {
-			// No revelamos si el email existe o no por seguridad
 			logger.info(`Intento de reseteo de password para email no existente: ${email}`);
 			return {
 				message: 'Si el email existe, recibirás un enlace de reseteo.',
 			};
 		}
 
-		// Crear token de reseteo
 		const resetToken = await PasswordResetToken.createForUser(user.id);
 
-		// En producción, aquí se enviaría un email con el link
-		logger.info(`Token de reseteo generado para usuario ${user.id}`);
+		try {
+			const emailResult = await emailService.sendPasswordResetEmail(user.email, resetToken.token);
+			logger.info(`Email de reseteo enviado a ${user.email}`, {
+				messageId: emailResult.messageId,
+			});
+		} catch (emailError) {
+			logger.error(`Error enviando email de reseteo a ${user.email}: ${emailError.message}`);
+		}
 
-		// TODO: Implementar envío de email
-		// await emailService.sendPasswordResetEmail(user.email, resetToken.token);
-
-		return {
+		const response = {
 			message: 'Si el email existe, recibirás un enlace de reseteo.',
-			// Solo en desarrollo:
-			...(process.env.NODE_ENV === 'development' && {
-				resetToken: resetToken.token,
-				resetLink: `${process.env.FRONTEND_URL}/reset-password?token=${resetToken.token}`,
-			}),
 		};
+
+		if (process.env.NODE_ENV === 'development') {
+			response.resetToken = resetToken.token;
+			response.resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken.token}`;
+		}
+
+		return response;
 	}
 
 	async resetPassword(token, newPassword) {
-		// Buscar token válido
 		const resetToken = await PasswordResetToken.findOne({
 			where: { token, used: false },
 		});
@@ -156,14 +313,11 @@ class AuthService {
 			throw new ApiError(400, 'Token inválido o ya utilizado.');
 		}
 
-		// Verificar expiración
 		if (new Date() > resetToken.expiresAt) {
 			throw new ApiError(400, 'El token ha expirado.');
 		}
 
-		// Actualizar contraseña
 		const user = await User.findByPk(resetToken.userId);
-
 		if (!user) {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
@@ -171,74 +325,93 @@ class AuthService {
 		await user.update({ password: newPassword });
 		await resetToken.update({ used: true });
 
-		logger.info(`Contraseña reseteada exitosamente para usuario ${user.id}`);
+		// Revocar todos los refresh tokens del usuario (forzar re-login en todos los dispositivos)
+		await RefreshToken.revokeAllForUser(user.id);
 
-		return { message: 'Contraseña actualizada exitosamente.' };
+		logger.info(`Contraseña reseteada para usuario ${user.id} — refresh tokens revocados`);
+
+		return { message: 'Contraseña actualizada exitosamente. Iniciá sesión con la nueva contraseña.' };
 	}
+
+	// =========================================================================
+	// CAMBIOS DE CUENTA
+	// =========================================================================
 
 	async changePassword(userId, currentPassword, newPassword) {
 		const user = await User.findByPk(userId);
-
 		if (!user) {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
 		const isPasswordValid = await user.comparePassword(currentPassword);
-
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Contraseña actual incorrecta.');
 		}
 
 		await user.update({ password: newPassword });
 
-		logger.info(`Contraseña cambiada exitosamente para usuario ${user.id}`);
+		// Revocar todos los refresh tokens (forzar re-login en otros dispositivos)
+		await RefreshToken.revokeAllForUser(user.id);
+
+		logger.info(`Contraseña cambiada para usuario ${user.id}`);
 
 		return { message: 'Contraseña cambiada exitosamente.' };
 	}
 
 	async changeEmail(userId, newEmail, password) {
 		const user = await User.findByPk(userId);
-
 		if (!user) {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
 		const isPasswordValid = await user.comparePassword(password);
-
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Contraseña incorrecta.');
 		}
 
 		const existingUser = await User.findOne({ where: { email: newEmail } });
-
 		if (existingUser && existingUser.id !== userId) {
 			throw new ApiError(400, 'El email ya está en uso por otra cuenta.');
 		}
 
+		const oldEmail = user.email;
 		await user.update({ email: newEmail });
 
-		logger.info(`Email cambiado exitosamente para usuario ${user.id}`);
+		logger.info(`Email cambiado para usuario ${user.id}`);
+
+		try {
+			await emailService.sendEmailChangeNotification(oldEmail, newEmail);
+		} catch (emailError) {
+			logger.error(`Error enviando notificación de cambio de email: ${emailError.message}`);
+		}
 
 		return { message: 'Email actualizado exitosamente.' };
 	}
 
 	async deleteAccount(userId, password) {
 		const user = await User.findByPk(userId);
-
 		if (!user) {
 			throw new ApiError(404, 'Usuario no encontrado.');
 		}
 
 		const isPasswordValid = await user.comparePassword(password);
-
 		if (!isPasswordValid) {
 			throw new ApiError(401, 'Contraseña incorrecta.');
 		}
 
-		// Soft delete
+		const userEmail = user.email;
+
+		// Soft delete + revocar todos los refresh tokens
 		await user.update({ isActive: false });
+		await RefreshToken.revokeAllForUser(user.id);
 
 		logger.info(`Cuenta desactivada para usuario ${user.id}`);
+
+		try {
+			await emailService.sendAccountDeletedNotification(userEmail);
+		} catch (emailError) {
+			logger.error(`Error enviando notificación de eliminación: ${emailError.message}`);
+		}
 
 		return { message: 'Cuenta eliminada exitosamente.' };
 	}

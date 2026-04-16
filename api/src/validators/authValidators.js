@@ -14,6 +14,24 @@ export const registerValidator = [
 	passwordRules,
 	body('name').notEmpty().trim().withMessage('El nombre es requerido'),
 	body('role').isIn(['patient', 'professional']).withMessage('Rol inválido'),
+
+	// Documento — opcional pero sanitizado
+	body('document')
+		.optional({ values: 'falsy' })
+		.isString().withMessage('El documento debe ser texto.')
+		.trim()
+		.isLength({ max: 40 }).withMessage('El documento no puede superar 40 caracteres.'),
+
+	// Aceptación de términos — requerido
+	body('acceptedTerms')
+		.isBoolean().withMessage('acceptedTerms debe ser booleano.')
+		.custom((value) => {
+			if (value !== true) {
+				throw new Error('Debes aceptar los términos y condiciones.');
+			}
+			return true;
+		}),
+
 	// Validar campos condicionales para profesional
 	body('specialty')
 		.if(body('role').equals('professional'))

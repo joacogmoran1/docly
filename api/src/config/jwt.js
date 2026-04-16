@@ -7,11 +7,37 @@ if (!secret && process.env.NODE_ENV === 'production') {
 
 export const jwtConfig = {
 	secret: secret || 'dev-only-secret-DO-NOT-USE-IN-PRODUCTION',
-	expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+
+	// ── Access token ────────────────────────────────────────────────────
+	// Corta vida: el frontend renueva automáticamente vía refresh token.
+	accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '1h',
+	accessCookieOptions: {
+		httpOnly: true,
+		secure: process.env.NODE_ENV === 'production',
+		sameSite: 'strict',
+		maxAge: 60 * 60 * 1000, // 1 hora
+		path: '/',
+	},
+
+	// ── Refresh token ───────────────────────────────────────────────────
+	// Larga vida, almacenado en DB para revocación, path restringido.
+	refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+	refreshCookieOptions: {
+		httpOnly: true,
+		secure: process.env.NODE_ENV === 'production',
+		sameSite: 'strict',
+		maxAge: 30 * 24 * 60 * 60 * 1000, // 30 días
+		path: '/api/auth', // Solo se envía a endpoints de auth
+	},
+
+	// ── Deprecado — mantener para compatibilidad transitoria ─────────
+	/** @deprecated Usar accessExpiresIn */
+	expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '1h',
+	/** @deprecated Usar accessCookieOptions */
 	cookieOptions: {
 		httpOnly: true,
 		secure: process.env.NODE_ENV === 'production',
 		sameSite: 'strict',
-		maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+		maxAge: 60 * 60 * 1000,
 	},
 };

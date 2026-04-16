@@ -7,13 +7,6 @@ import { loginSchema } from "@/modules/auth/schemas/login.schema";
 import type { LoginFormValues } from "@/modules/auth/types/auth-forms";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
-import { Select } from "@/shared/ui/Select";
-
-const roleOptions = [
-  { value: "", label: "Deteccion automatica" },
-  { value: "patient", label: "Paciente" },
-  { value: "professional", label: "Profesional" },
-];
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -22,15 +15,12 @@ export function LoginPage() {
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
       email: "",
       password: "",
-      role: undefined,
     },
   });
 
@@ -69,15 +59,6 @@ export function LoginPage() {
           type="password"
           error={errors.password?.message}
           {...register("password")}
-        />
-        <Select
-          label="Acceso por rol"
-          options={roleOptions}
-          error={errors.role?.message}
-          value={watch("role") ?? ""}
-          onChange={(event) =>
-            setValue("role", event.target.value ? (event.target.value as "patient" | "professional") : undefined)
-          }
         />
         {serverError ? <span className="field-error">{serverError}</span> : null}
         <Button type="submit" fullWidth disabled={isSubmitting}>

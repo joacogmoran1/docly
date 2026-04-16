@@ -13,7 +13,6 @@ router.get('/professional/:professionalId', appointmentController.getByProfessio
 
 // ── Crear turno (ambos roles) ─────────────────────────────────────────────
 router.post('/', appointmentController.create);
-router.post('/:id/reschedule', restrictTo('professional'), appointmentController.reschedule);
 router.post('/:id/complete', restrictTo('professional'), appointmentController.complete);
 
 // ── Acciones del paciente ────────────────────────────────────────────────

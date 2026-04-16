@@ -11,8 +11,6 @@ const User = db.define('User', {
 	email: {
 		type: DataTypes.STRING,
 		allowNull: false,
-		// ✅ FIX: Removido `unique: true` — misma razón que Patient/Professional.
-		// sync({ alter: true }) genera SQL inválido con unique en columna.
 		validate: {
 			isEmail: true,
 		},
@@ -40,6 +38,16 @@ const User = db.define('User', {
 		type: DataTypes.BOOLEAN,
 		defaultValue: true,
 		field: 'is_active',
+	},
+	/**
+	 * Timestamp de aceptación de términos y condiciones.
+	 * null → no aceptó (cuentas legacy pre-migración).
+	 */
+	acceptedTermsAt: {
+		type: DataTypes.DATE,
+		allowNull: true,
+		field: 'accepted_terms_at',
+		comment: 'Fecha y hora en que el usuario aceptó los términos de uso.',
 	},
 }, {
 	indexes: [

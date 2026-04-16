@@ -1,7 +1,6 @@
 export interface LoginFormValues {
   email: string;
   password: string;
-  role?: "patient" | "professional";
 }
 
 export interface ForgotPasswordFormValues {

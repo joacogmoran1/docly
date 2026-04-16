@@ -8,81 +8,81 @@ import { requestPasswordReset } from "@/modules/auth/api/auth.api";
 import { Button } from "@/shared/ui/Button";
 import { Input } from "@/shared/ui/Input";
 
+const isDev = import.meta.env.DEV;
+
 export function ForgotPasswordPage() {
-  const [submitted, setSubmitted] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [resetLink, setResetLink] = useState<string | null>(null);
-  const [resetToken, setResetToken] = useState<string | null>(null);
-  const [serverError, setServerError] = useState<string | null>(null);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<ForgotPasswordFormValues>({
-    resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: { email: "" },
-  });
+	const [submitted, setSubmitted] = useState(false);
+	const [message, setMessage] = useState<string | null>(null);
+	const [resetLink, setResetLink] = useState<string | null>(null);
+	const [serverError, setServerError] = useState<string | null>(null);
+	const {
+		register,
+		handleSubmit,
+		formState: { errors, isSubmitting },
+	} = useForm<ForgotPasswordFormValues>({
+		resolver: zodResolver(forgotPasswordSchema),
+		defaultValues: { email: "" },
+	});
 
-  const onSubmit = handleSubmit(async (values) => {
-    try {
-      setServerError(null);
-      const response = await requestPasswordReset(values);
-      setMessage(response.message);
-      setResetLink(response.resetLink ?? null);
-      setResetToken(response.resetToken ?? null);
-      setSubmitted(true);
-    } catch (error) {
-      setSubmitted(false);
-      setMessage(null);
-      setResetLink(null);
-      setResetToken(null);
-      setServerError(
-        error instanceof Error ? error.message : "No se pudo iniciar la recuperacion.",
-      );
-    }
-  });
+	const onSubmit = handleSubmit(async (values) => {
+		try {
+			setServerError(null);
+			const response = await requestPasswordReset(values);
+			setMessage(response.message);
+			// Solo mostrar link de desarrollo si el backend lo devuelve (dev only)
+			setResetLink(isDev ? (response.resetLink ?? null) : null);
+			setSubmitted(true);
+		} catch (error) {
+			setSubmitted(false);
+			setMessage(null);
+			setResetLink(null);
+			setServerError(
+				error instanceof Error ? error.message : "No se pudo iniciar la recuperacion.",
+			);
+		}
+	});
 
-  return (
-    <div className="auth-card stack-lg">
-      <div className="stack-sm">
-        <span className="eyebrow">Recuperacion segura</span>
-        <h1 className="title-lg">Restablece tu contrasena</h1>
-        <p className="meta">
-          Ingresa tu email y el backend generara un enlace de recuperacion.
-        </p>
-      </div>
+	return (
+		<div className="auth-card stack-lg">
+			<div className="stack-sm">
+				<span className="eyebrow">Recuperacion segura</span>
+				<h1 className="title-lg">Restablece tu contrasena</h1>
+				<p className="meta">
+					Ingresa tu email y recibiras un enlace para crear una nueva contrasena.
+				</p>
+			</div>
 
-      <form className="stack-md" onSubmit={onSubmit}>
-        <Input
-          label="Email"
-          placeholder="nombre@correo.com"
-          type="email"
-          error={errors.email?.message}
-          {...register("email")}
-        />
-        {submitted ? (
-          <div className="panel">
-            <strong>Revisa tu correo</strong>
-            <p className="meta">{message}</p>
-            {resetLink ? (
-              <a href={resetLink} className="helper-text">
-                Abrir enlace de reseteo
-              </a>
-            ) : null}
-            {resetToken ? (
-              <span className="helper-text">Token de desarrollo: {resetToken}</span>
-            ) : null}
-          </div>
-        ) : null}
-        {serverError ? <span className="field-error">{serverError}</span> : null}
-        <Button type="submit" fullWidth disabled={isSubmitting}>
-          {isSubmitting ? "Enviando..." : "Enviar enlace"}
-        </Button>
-      </form>
+			<form className="stack-md" onSubmit={onSubmit}>
+				<Input
+					label="Email"
+					placeholder="nombre@correo.com"
+					type="email"
+					error={errors.email?.message}
+					{...register("email")}
+				/>
+				{submitted ? (
+					<div className="panel">
+						<strong>Revisa tu correo</strong>
+						<p className="meta">{message}</p>
+						<p className="meta">
+							Si no lo encontras, revisa la carpeta de spam.
+						</p>
+						{isDev && resetLink ? (
+							<a href={resetLink} className="helper-text">
+								(Dev) Abrir enlace de reseteo
+							</a>
+						) : null}
+					</div>
+				) : null}
+				{serverError ? <span className="field-error">{serverError}</span> : null}
+				<Button type="submit" fullWidth disabled={isSubmitting || submitted}>
+					{isSubmitting ? "Enviando..." : submitted ? "Enlace enviado" : "Enviar enlace"}
+				</Button>
+			</form>
 
-      <Link to="/auth/login" className="helper-text">
-        Volver al login
-      </Link>
-    </div>
-  );
+			<Link to="/auth/login" className="helper-text">
+				Volver al login
+			</Link>
+		</div>
+	);
 }
