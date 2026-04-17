@@ -1,6 +1,11 @@
 import type { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import { sessionChannel } from "@/services/auth/session-channel";
 import { sessionManager } from "@/services/auth/session-manager";
+import {
+	ensureCsrfCookie,
+	getCsrfHeaderName,
+	getCsrfTokenFromCookie,
+} from "@/services/security/csrf";
 
 // ── Refresh token queue ─────────────────────────────────────────────────
 // Previene múltiples refresh simultáneos cuando varias requests fallan con 401.
@@ -37,11 +42,24 @@ interface CustomRequestConfig extends InternalAxiosRequestConfig {
 export function attachInterceptors(client: AxiosInstance) {
 	// ── Request interceptor ──
 	client.interceptors.request.use((config) => {
+		const method = config.method?.toUpperCase() ?? "GET";
 		config.headers.Accept = "application/json";
 		config.headers["X-Requested-With"] = "XMLHttpRequest";
 		config.withCredentials = true;
 
-		return config;
+		return Promise.resolve(config).then(async (nextConfig) => {
+			if (
+				!["GET", "HEAD", "OPTIONS"].includes(method) &&
+				!String(nextConfig.url ?? "").includes("/auth/csrf-token")
+			) {
+				const csrfToken = getCsrfTokenFromCookie() ?? (await ensureCsrfCookie());
+				if (csrfToken) {
+					nextConfig.headers[getCsrfHeaderName()] = csrfToken;
+				}
+			}
+
+			return nextConfig;
+		});
 	});
 
 	// ── Response interceptor ──

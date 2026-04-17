@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "codex/**"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: docly_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d docly_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      TRUST_PROXY: false
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_NAME: docly_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_POOL_MAX: 10
+      DB_POOL_MIN: 0
+      JWT_SECRET: ci-secret-with-sufficient-length
+      CSRF_SECRET: ci-csrf-secret-with-sufficient-length
+      FRONTEND_URLS: http://localhost:3000
+      AUTH_COOKIE_SECURE: false
+      AUTH_COOKIE_SAME_SITE: lax
+      LOG_TO_FILES: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            api/package-lock.json
+            client/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: ./api
+        run: npm ci
+
+      - name: Run backend migrations
+        working-directory: ./api
+        run: npm run db:migrate
+
+      - name: Run backend tests
+        working-directory: ./api
+        run: npm test
+
+      - name: Install frontend dependencies
+        working-directory: ./client
+        run: npm ci
+
+      - name: Run frontend checks
+        working-directory: ./client
+        run: npm test

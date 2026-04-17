@@ -1,4 +1,5 @@
 import appointmentService from '../services/appointmentService.js';
+import accessControlService from '../services/accessControlService.js';
 import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
 
@@ -17,6 +18,11 @@ export const create = catchAsync(async (req, res) => {
 		if (!req.body.patientId) {
 			throw new ApiError(400, 'patientId es requerido cuando el profesional agenda un turno.');
 		}
+		await accessControlService.assertProfessionalCanAccessPatient(
+			req.user,
+			req.body.patientId,
+			'No tenés vínculo con este paciente para agendar un turno.'
+		);
 		appointmentData = {
 			...req.body,
 			professionalId: req.user.professional.id,
@@ -95,11 +101,18 @@ export const complete = catchAsync(async (req, res) => {
 
 export const getById = catchAsync(async (req, res) => {
 	const appointment = await appointmentService.getById(req.params.id);
+	accessControlService.assertAppointmentParticipant(req.user, appointment);
 
 	res.status(200).json({ success: true, data: appointment });
 });
 
 export const getByPatient = catchAsync(async (req, res) => {
+	accessControlService.assertPatientSelf(
+		req.user,
+		req.params.patientId,
+		'Solo podés ver tus propios turnos.'
+	);
+
 	const appointments = await appointmentService.getByPatient(req.params.patientId);
 
 	res.status(200).json({
@@ -110,6 +123,12 @@ export const getByPatient = catchAsync(async (req, res) => {
 });
 
 export const getByProfessional = catchAsync(async (req, res) => {
+	accessControlService.assertProfessionalSelf(
+		req.user,
+		req.params.professionalId,
+		'Solo podés ver tus propios turnos.'
+	);
+
 	const appointments = await appointmentService.getByProfessional(
 		req.params.professionalId,
 		req.query

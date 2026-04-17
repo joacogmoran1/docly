@@ -1,15 +1,16 @@
 import express from 'express';
 import * as appointmentController from '../controllers/appointmentController.js';
 import { protect, restrictTo } from '../middleware/auth.js';
+import { agendaReadLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
 router.use(protect);
 
 // ── Lecturas ─────────────────────────────────────────────────────────────
-router.get('/:id', appointmentController.getById);
-router.get('/patient/:patientId', appointmentController.getByPatient);
-router.get('/professional/:professionalId', appointmentController.getByProfessional);
+router.get('/:id', agendaReadLimiter, appointmentController.getById);
+router.get('/patient/:patientId', agendaReadLimiter, appointmentController.getByPatient);
+router.get('/professional/:professionalId', agendaReadLimiter, appointmentController.getByProfessional);
 
 // ── Crear turno (ambos roles) ─────────────────────────────────────────────
 router.post('/', appointmentController.create);

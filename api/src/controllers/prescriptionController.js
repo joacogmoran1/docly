@@ -1,16 +1,16 @@
 import prescriptionService from '../services/prescriptionService.js';
 import prescriptionPdfService from '../services/prescriptionPdfService.js';
+import accessControlService from '../services/accessControlService.js';
 import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
 
 // =========================================================================
-// CREAR (solo profesionales — professionalId de sesión, NO del body)
+// CREAR (solo profesionales - professionalId de sesion, no del body)
 // =========================================================================
 
 export const create = catchAsync(async (req, res) => {
 	const prescription = await prescriptionService.create({
 		...req.body,
-		// Sobreescribir lo que mande el frontend
 		professionalId: req.user.professional.id,
 	});
 
@@ -19,39 +19,43 @@ export const create = catchAsync(async (req, res) => {
 
 // =========================================================================
 // LEER POR ID
-// Solo el paciente dueño o el profesional emisor
 // =========================================================================
 
 export const getById = catchAsync(async (req, res) => {
 	const prescription = await prescriptionService.getById(req.params.id);
-
-	const isOwnerPatient = prescription.patientId === req.user.patient?.id;
-	const isOwnerProfessional = prescription.professionalId === req.user.professional?.id;
-
-	if (!isOwnerPatient && !isOwnerProfessional) {
-		throw new ApiError(403, 'No tenés permiso para ver esta receta.');
-	}
+	accessControlService.assertPrescriptionReadAccess(req.user, prescription);
 
 	res.status(200).json({ success: true, data: prescription });
 });
 
 // =========================================================================
 // LEER POR PACIENTE
-// Solo ese paciente, o un profesional vinculado a ese paciente
 // =========================================================================
 
 export const getByPatient = catchAsync(async (req, res) => {
 	const { patientId } = req.params;
+	let filters = req.query;
 
 	if (req.user.role === 'patient') {
-		if (req.user.patient?.id !== patientId) {
-			throw new ApiError(403, 'Solo podés ver tus propias recetas.');
-		}
-	}
-	// Si es profesional, el filtro de query solo devuelve las suyas vía professionalId
-	// (no puede ver recetas de otros profesionales para ese paciente salvo que se agregue lógica)
+		accessControlService.assertPatientSelf(
+			req.user,
+			patientId,
+			'Solo podes ver tus propias recetas.'
+		);
+	} else {
+		await accessControlService.assertProfessionalCanAccessPatient(
+			req.user,
+			patientId,
+			'No tenes vinculo con este paciente.'
+		);
 
-	const prescriptions = await prescriptionService.getByPatient(patientId, req.query);
+		filters = {
+			...req.query,
+			professionalId: req.user.professional.id,
+		};
+	}
+
+	const prescriptions = await prescriptionService.getByPatient(patientId, filters);
 
 	res.status(200).json({
 		success: true,
@@ -62,14 +66,13 @@ export const getByPatient = catchAsync(async (req, res) => {
 
 // =========================================================================
 // LEER POR PROFESIONAL
-// Solo ese profesional
 // =========================================================================
 
 export const getByProfessional = catchAsync(async (req, res) => {
 	const { professionalId } = req.params;
 
 	if (req.user.professional?.id !== professionalId) {
-		throw new ApiError(403, 'Solo podés ver tus propias recetas.');
+		throw new ApiError(403, 'Solo podes ver tus propias recetas.');
 	}
 
 	const prescriptions = await prescriptionService.getByProfessional(professionalId, req.query);
@@ -82,14 +85,14 @@ export const getByProfessional = catchAsync(async (req, res) => {
 });
 
 // =========================================================================
-// ACTUALIZAR — solo el profesional que la creó
+// ACTUALIZAR
 // =========================================================================
 
 export const update = catchAsync(async (req, res) => {
 	const existing = await prescriptionService.getById(req.params.id);
 
 	if (existing.professionalId !== req.user.professional?.id) {
-		throw new ApiError(403, 'Solo el profesional que emitió esta receta puede modificarla.');
+		throw new ApiError(403, 'Solo el profesional que emitio esta receta puede modificarla.');
 	}
 
 	const prescription = await prescriptionService.update(req.params.id, req.body);
@@ -98,14 +101,14 @@ export const update = catchAsync(async (req, res) => {
 });
 
 // =========================================================================
-// ELIMINAR — solo el profesional que la creó
+// ELIMINAR
 // =========================================================================
 
 export const deletePrescription = catchAsync(async (req, res) => {
 	const existing = await prescriptionService.getById(req.params.id);
 
 	if (existing.professionalId !== req.user.professional?.id) {
-		throw new ApiError(403, 'Solo el profesional que emitió esta receta puede eliminarla.');
+		throw new ApiError(403, 'Solo el profesional que emitio esta receta puede eliminarla.');
 	}
 
 	await prescriptionService.delete(req.params.id);
@@ -114,18 +117,16 @@ export const deletePrescription = catchAsync(async (req, res) => {
 });
 
 // =========================================================================
-// DESCARGAR PDF — paciente dueño o profesional emisor
+// DESCARGAR PDF
 // =========================================================================
 
 export const download = catchAsync(async (req, res) => {
 	const prescription = await prescriptionService.getById(req.params.id);
-
-	const isOwnerPatient = prescription.patientId === req.user.patient?.id;
-	const isOwnerProfessional = prescription.professionalId === req.user.professional?.id;
-
-	if (!isOwnerPatient && !isOwnerProfessional) {
-		throw new ApiError(403, 'No tenés permiso para descargar esta receta.');
-	}
+	accessControlService.assertPrescriptionReadAccess(
+		req.user,
+		prescription,
+		'No tenes permiso para descargar esta receta.'
+	);
 
 	const pdfBuffer = await prescriptionPdfService.generate(req.params.id);
 

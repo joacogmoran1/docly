@@ -1,7 +1,53 @@
+import { Op } from 'sequelize';
 import { Patient, HealthInfo, User } from '../database/models/index.js';
 import ApiError from '../utils/ApiError.js';
 
 class PatientService {
+	async search(query, professionalId) {
+		const normalizedQuery = query?.trim();
+
+		if (!normalizedQuery || !professionalId) {
+			return [];
+		}
+
+		const term = `%${normalizedQuery}%`;
+
+		return await Patient.findAll({
+			where: {
+				[Op.or]: [
+					{ dni: { [Op.iLike]: term } },
+					{ medicalCoverage: { [Op.iLike]: term } },
+					{ coverageNumber: { [Op.iLike]: term } },
+					{ '$user.name$': { [Op.iLike]: term } },
+					{ '$user.lastName$': { [Op.iLike]: term } },
+					{ '$user.email$': { [Op.iLike]: term } },
+					{ '$user.phone$': { [Op.iLike]: term } },
+				],
+			},
+			include: [
+				{
+					association: 'user',
+					attributes: ['id', 'email', 'name', 'lastName', 'phone'],
+					where: {
+						role: 'patient',
+						isActive: true,
+					},
+				},
+				{
+					association: 'professionals',
+					attributes: [],
+					through: { attributes: [] },
+					where: { id: professionalId },
+				},
+			],
+			order: [
+				[{ model: User, as: 'user' }, 'lastName', 'ASC'],
+				[{ model: User, as: 'user' }, 'name', 'ASC'],
+			],
+			limit: 20,
+		});
+	}
+
 	async getProfile(patientId) {
 		const patient = await Patient.findByPk(patientId, {
 			include: [

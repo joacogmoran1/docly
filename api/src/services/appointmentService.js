@@ -1,28 +1,12 @@
-import { Appointment, Patient, Professional, Office, User } from '../database/models/index.js';
+import { Appointment, Office, PatientProfessional } from '../database/models/index.js';
 import officeBlockService from './officeBlockService.js';
 import ApiError from '../utils/ApiError.js';
-import { Op } from 'sequelize';
+import { Transaction } from 'sequelize';
 import sequelize from '../config/database.js';
-
-/**
- * Estados válidos y transiciones:
- *
- *   pending ──→ confirmed ──→ completed
- *     │              │
- *     └──→ cancelled ←┘
- *
- * pending:   profesional agenda → paciente debe responder
- * confirmed: paciente aceptó
- * completed: consulta finalizada (profesional)
- * cancelled: cancelado por cualquiera
- */
+import { acquireTransactionLock } from '../utils/dbLocks.js';
 
 class AppointmentService {
-	// =========================================================================
-	// HELPERS
-	// =========================================================================
-
-	async _hasTimeConflict({ date, time, duration, professionalId, officeId, patientId, excludeId }) {
+	async _hasTimeConflict({ date, time, duration, professionalId, officeId, patientId, excludeId, transaction }) {
 		let whereExtra = '';
 		const replacements = { date, time, duration };
 
@@ -40,7 +24,7 @@ class AppointmentService {
 			replacements.excludeId = excludeId;
 		}
 
-		const [results] = await sequelize.query(
+		const [result] = await sequelize.query(
 			`
 			SELECT id FROM appointments
 			WHERE date = :date
@@ -50,10 +34,14 @@ class AppointmentService {
 			  AND ("time" + COALESCE(duration, 30) * interval '1 minute') > :time::time
 			LIMIT 1
 			`,
-			{ replacements, type: sequelize.QueryTypes.SELECT }
+			{
+				replacements,
+				type: sequelize.QueryTypes.SELECT,
+				transaction,
+			}
 		);
 
-		return !!results;
+		return !!result;
 	}
 
 	async _findOrFail(appointmentId) {
@@ -64,68 +52,109 @@ class AppointmentService {
 		return appointment;
 	}
 
-	// =========================================================================
-	// CREAR TURNO
-	// =========================================================================
+	_buildConflictError(error) {
+		if (
+			error?.name === 'SequelizeExclusionConstraintError' ||
+			error?.original?.code === '23P01' ||
+			error?.original?.code === '40001'
+		) {
+			return new ApiError(
+				409,
+				'El horario dejó de estar disponible mientras se procesaba la reserva. Intentá nuevamente.'
+			);
+		}
+
+		return error;
+	}
 
 	async create(appointmentData) {
 		const { patientId, professionalId, officeId, date, time, duration, reason, createdBy } = appointmentData;
-
-		const office = await Office.findByPk(officeId);
-		if (!office) {
-			throw new ApiError(404, 'Consultorio no encontrado.');
-		}
-
-		const appointmentDuration = duration || office.appointmentDuration || 30;
-
-		// No agendar en el pasado
-		const appointmentDateTime = new Date(`${date}T${time}`);
-		if (appointmentDateTime <= new Date()) {
-			throw new ApiError(400, 'No se puede agendar un turno en una fecha y hora pasada.');
-		}
-
-		// No agendar en horario bloqueado
-		const isBlocked = await officeBlockService.isBlocked(officeId, date, time);
-		if (isBlocked) {
-			throw new ApiError(400, 'Este horario no está disponible (bloqueado por el profesional).');
-		}
-
-		// No solapar con turnos del profesional
-		const professionalConflict = await this._hasTimeConflict({
-			date, time, duration: appointmentDuration, professionalId, officeId,
-		});
-		if (professionalConflict) {
-			throw new ApiError(400, 'Ya existe un turno que se superpone con ese horario.');
-		}
-
-		// No solapar con turnos del paciente
-		const patientConflict = await this._hasTimeConflict({
-			date, time, duration: appointmentDuration, patientId,
-		});
-		if (patientConflict) {
-			throw new ApiError(400, 'El paciente ya tiene un turno en ese horario.');
-		}
-
-		// Determinar estado inicial según quién agenda
-		const initialStatus = createdBy === 'patient' ? 'confirmed' : 'pending';
-
-		const appointment = await Appointment.create({
-			patientId,
-			professionalId,
-			officeId,
-			date,
-			time,
-			duration: appointmentDuration,
-			reason,
-			status: initialStatus,
+		const transaction = await sequelize.transaction({
+			isolationLevel: Transaction.ISOLATION_LEVELS.SERIALIZABLE,
 		});
 
-		return await this.getById(appointment.id);
+		try {
+			await acquireTransactionLock(transaction, 'appointment', officeId, date);
+			await acquireTransactionLock(transaction, 'patient-appointment', patientId, date);
+
+			const office = await Office.findByPk(officeId, {
+				transaction,
+				lock: transaction.LOCK.UPDATE,
+			});
+			if (!office) {
+				throw new ApiError(404, 'Consultorio no encontrado.');
+			}
+
+			if (String(office.professionalId) !== String(professionalId)) {
+				throw new ApiError(400, 'El consultorio seleccionado no pertenece al profesional indicado.');
+			}
+
+			const appointmentDuration = duration || office.appointmentDuration || 30;
+
+			const appointmentDateTime = new Date(`${date}T${time}`);
+			if (appointmentDateTime <= new Date()) {
+				throw new ApiError(400, 'No se puede agendar un turno en una fecha y hora pasada.');
+			}
+
+			const isBlocked = await officeBlockService.isBlocked(officeId, date, time, { transaction });
+			if (isBlocked) {
+				throw new ApiError(400, 'Este horario no está disponible (bloqueado por el profesional).');
+			}
+
+			const professionalConflict = await this._hasTimeConflict({
+				date,
+				time,
+				duration: appointmentDuration,
+				professionalId,
+				officeId,
+				transaction,
+			});
+			if (professionalConflict) {
+				throw new ApiError(400, 'Ya existe un turno que se superpone con ese horario.');
+			}
+
+			const patientConflict = await this._hasTimeConflict({
+				date,
+				time,
+				duration: appointmentDuration,
+				patientId,
+				transaction,
+			});
+			if (patientConflict) {
+				throw new ApiError(400, 'El paciente ya tiene un turno en ese horario.');
+			}
+
+			const initialStatus = createdBy === 'patient' ? 'confirmed' : 'pending';
+
+			const appointment = await Appointment.create(
+				{
+					patientId,
+					professionalId,
+					officeId,
+					date,
+					time,
+					duration: appointmentDuration,
+					reason,
+					status: initialStatus,
+				},
+				{ transaction }
+			);
+
+			await PatientProfessional.findOrCreate({
+				where: { patientId, professionalId },
+				transaction,
+			});
+
+			await transaction.commit();
+
+			return await this.getById(appointment.id);
+		} catch (error) {
+			if (!transaction.finished) {
+				await transaction.rollback();
+			}
+			throw this._buildConflictError(error);
+		}
 	}
-
-	// =========================================================================
-	// CONFIRMAR TURNO (paciente acepta → 'pending' → 'confirmed')
-	// =========================================================================
 
 	async confirm(appointmentId) {
 		const appointment = await this._findOrFail(appointmentId);
@@ -138,10 +167,6 @@ class AppointmentService {
 
 		return await this.getById(appointmentId);
 	}
-
-	// =========================================================================
-	// CANCELAR TURNO (cualquier parte → 'pending'|'confirmed' → 'cancelled')
-	// =========================================================================
 
 	async cancel(appointmentId, reason) {
 		const appointment = await this._findOrFail(appointmentId);
@@ -162,10 +187,6 @@ class AppointmentService {
 		return await this.getById(appointmentId);
 	}
 
-	// =========================================================================
-	// COMPLETAR TURNO (profesional cierra → 'confirmed' → 'completed')
-	// =========================================================================
-
 	async complete(appointmentId) {
 		const appointment = await this._findOrFail(appointmentId);
 
@@ -177,10 +198,6 @@ class AppointmentService {
 
 		return await this.getById(appointmentId);
 	}
-
-	// =========================================================================
-	// LECTURAS
-	// =========================================================================
 
 	async getById(appointmentId) {
 		const appointment = await Appointment.findByPk(appointmentId, {

@@ -33,6 +33,7 @@ createdb docly_db
 
 ```bash
 npm run db:migrate
+npm run db:rollback
 npm run db:seed
 ```
 
@@ -67,9 +68,20 @@ src/
 - JWT en httpOnly cookies
 - Bcrypt para passwords (salt rounds: 12)
 - Helmet para headers seguros
-- Rate limiting por IP
+- Rate limiting compartido en base de datos
+- Rate limiting opcional en Redis para desacoplarlo de Postgres
+- CSRF con cookie firmada + header
 - Validación con express-validator
-- CORS configurado correctamente
+- CORS multi-origen validado por entorno
+- Limpieza programada de tokens vencidos y filas viejas de rate limiting
+
+## 🧪 Checks
+
+```bash
+npm test
+npm run smoke:load
+npm run test:booking-concurrency
+```
 
 ## 📊 API Endpoints
 

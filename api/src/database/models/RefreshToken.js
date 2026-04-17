@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import db from '../../config/database.js';
 
 const RefreshToken = db.define('RefreshToken', {
@@ -87,17 +87,10 @@ RefreshToken.revokeAllForUser = async function (userId) {
 	);
 };
 
-/**
- * Cleanup expired tokens older than the given number of days.
- * Call periodically (e.g. daily cron) to prevent table bloat.
- */
-RefreshToken.cleanup = async function (olderThanDays = 60) {
-	const cutoff = new Date();
-	cutoff.setDate(cutoff.getDate() - olderThanDays);
-
+RefreshToken.cleanup = async function ({ now = new Date() } = {}) {
 	return await RefreshToken.destroy({
 		where: {
-			expiresAt: { [db.Sequelize.Op.lt]: cutoff },
+			expiresAt: { [Op.lt]: now },
 		},
 	});
 };

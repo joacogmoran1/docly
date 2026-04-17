@@ -46,11 +46,12 @@ export function LoginPage() {
         </p>
       </div>
 
-      <form className="stack-md" onSubmit={onSubmit}>
+      <form className="stack-md" onSubmit={onSubmit} data-testid="login-form">
         <Input
           label="Email"
           placeholder="nombre@correo.com"
           error={errors.email?.message}
+          data-testid="login-email"
           {...register("email")}
         />
         <Input
@@ -58,10 +59,11 @@ export function LoginPage() {
           placeholder="Ingresa tu contrasena"
           type="password"
           error={errors.password?.message}
+          data-testid="login-password"
           {...register("password")}
         />
         {serverError ? <span className="field-error">{serverError}</span> : null}
-        <Button type="submit" fullWidth disabled={isSubmitting}>
+        <Button type="submit" fullWidth disabled={isSubmitting} data-testid="login-submit">
           {isSubmitting ? "Ingresando..." : "Ingresar"}
         </Button>
       </form>

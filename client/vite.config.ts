@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import {
   CONTENT_SECURITY_POLICY,
@@ -6,8 +6,33 @@ import {
   SECURITY_HEADERS,
 } from "./src/shared/config/security";
 
-function injectSecurityMetaTags(): Plugin {
-  const content = CONTENT_SECURITY_POLICY.replace(/"/g, "&quot;");
+function resolveExtraConnectOrigins(rawApiBaseUrl?: string) {
+  if (!rawApiBaseUrl || !/^https?:\/\//i.test(rawApiBaseUrl.trim())) {
+    return [];
+  }
+
+  try {
+    return [new URL(rawApiBaseUrl).origin];
+  } catch {
+    return [];
+  }
+}
+
+function buildContentSecurityPolicy(extraConnectOrigins: string[] = []) {
+  if (extraConnectOrigins.length === 0) {
+    return CONTENT_SECURITY_POLICY;
+  }
+
+  const uniqueOrigins = extraConnectOrigins.filter(
+    (origin, index) => extraConnectOrigins.indexOf(origin) === index,
+  );
+  const connectSrc = `connect-src 'self' ws: wss: ${uniqueOrigins.join(" ")}`;
+
+  return CONTENT_SECURITY_POLICY.replace("connect-src 'self' ws: wss:", connectSrc);
+}
+
+function injectSecurityMetaTags(contentSecurityPolicy: string): Plugin {
+  const content = contentSecurityPolicy.replace(/"/g, "&quot;");
 
   return {
     name: "docly-security-meta",
@@ -24,24 +49,34 @@ function injectSecurityMetaTags(): Plugin {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), injectSecurityMetaTags()],
-  resolve: {
-    alias: {
-      "@": new URL("./src", import.meta.url).pathname,
-    },
-  },
-  server: {
-    headers: DEVELOPMENT_SECURITY_HEADERS,
-    proxy: {
-      "/api": {
-        target: "http://localhost:4000",
-        changeOrigin: true,
-        secure: false,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, ".", "VITE_");
+  const contentSecurityPolicy = buildContentSecurityPolicy(
+    resolveExtraConnectOrigins(env.VITE_API_BASE_URL),
+  );
+
+  return {
+    plugins: [react(), injectSecurityMetaTags(contentSecurityPolicy)],
+    resolve: {
+      alias: {
+        "@": new URL("./src", import.meta.url).pathname,
       },
     },
-  },
-  preview: {
-    headers: SECURITY_HEADERS,
-  },
+    server: {
+      headers: DEVELOPMENT_SECURITY_HEADERS,
+      proxy: {
+        "/api": {
+          target: "http://localhost:4000",
+          changeOrigin: true,
+          secure: false,
+        },
+      },
+    },
+    preview: {
+      headers: {
+        ...SECURITY_HEADERS,
+        "Content-Security-Policy": contentSecurityPolicy,
+      },
+    },
+  };
 });

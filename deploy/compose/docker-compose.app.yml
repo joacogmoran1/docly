@@ -1,0 +1,124 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DOCLY_DB_NAME:-docly}
+      POSTGRES_USER: ${DOCLY_DB_USER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/docly-secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ${DOCLY_SECRETS_DIR}:/run/docly-secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DOCLY_DB_USER:-postgres} -d ${DOCLY_DB_NAME:-docly}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../../api
+    restart: unless-stopped
+    env_file:
+      - ${DOCLY_API_ENV_FILE}
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      TRUST_PROXY: ${DOCLY_TRUST_PROXY:-1}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DOCLY_DB_NAME:-docly}
+      DB_USER: ${DOCLY_DB_USER:-postgres}
+      RATE_LIMIT_STORE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      LOG_TO_FILES: false
+    volumes:
+      - ${DOCLY_SECRETS_DIR}:/run/docly-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -c "npm run db:migrate && npm run start"
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  client:
+    build:
+      context: ../../client
+    restart: unless-stopped
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      client:
+        condition: service_healthy
+    environment:
+      DOCLY_SERVER_NAME: ${DOCLY_SERVER_NAME}
+      DOCLY_HSTS_VALUE: ${DOCLY_HSTS_VALUE:-max-age=300}
+    ports:
+      - "${DOCLY_HTTP_PORT:-80}:80"
+      - "${DOCLY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ../nginx/templates/reverse-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DOCLY_TLS_DIR}:/run/docly-tls:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  postgres-backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${DOCLY_DB_USER:-postgres}
+      PGDATABASE: ${DOCLY_DB_NAME:-docly}
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL_SECONDS: ${DOCLY_BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${DOCLY_BACKUP_RETENTION_DAYS:-14}
+      POSTGRES_PASSWORD_FILE: /run/docly-secrets/postgres_password
+    volumes:
+      - postgres_backups:/backups
+      - ${DOCLY_SECRETS_DIR}:/run/docly-secrets:ro
+      - ../scripts/run-postgres-backup.sh:/usr/local/bin/run-postgres-backup.sh:ro
+    command: ["sh", "/usr/local/bin/run-postgres-backup.sh"]
+
+volumes:
+  postgres_data:
+  postgres_backups:
+  redis_data:

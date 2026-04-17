@@ -35,6 +35,18 @@ export function formatNumericTime(value: string) {
   }).format(new Date(value));
 }
 
+export function toLocalDateTime(date: string, time: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const normalizedTime = time.length >= 5 ? time.slice(0, 5) : time;
+  const [hours, minutes] = normalizedTime.split(":").map(Number);
+
+  return new Date(year, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0, 0, 0);
+}
+
+export function isPastScheduleSlot(date: string, time: string, reference = new Date()) {
+  return toLocalDateTime(date, time).getTime() <= reference.getTime();
+}
+
 export function formatRelativeDayLabel(value: string) {
   const date = new Date(value);
   const today = new Date();

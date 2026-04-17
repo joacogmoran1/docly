@@ -52,16 +52,17 @@ export function ForgotPasswordPage() {
 				</p>
 			</div>
 
-			<form className="stack-md" onSubmit={onSubmit}>
+			<form className="stack-md" onSubmit={onSubmit} data-testid="forgot-password-form">
 				<Input
 					label="Email"
 					placeholder="nombre@correo.com"
 					type="email"
 					error={errors.email?.message}
+					data-testid="forgot-password-email"
 					{...register("email")}
 				/>
 				{submitted ? (
-					<div className="panel">
+					<div className="panel" data-testid="forgot-password-success">
 						<strong>Revisa tu correo</strong>
 						<p className="meta">{message}</p>
 						<p className="meta">
@@ -75,7 +76,12 @@ export function ForgotPasswordPage() {
 					</div>
 				) : null}
 				{serverError ? <span className="field-error">{serverError}</span> : null}
-				<Button type="submit" fullWidth disabled={isSubmitting || submitted}>
+				<Button
+					type="submit"
+					fullWidth
+					disabled={isSubmitting || submitted}
+					data-testid="forgot-password-submit"
+				>
 					{isSubmitting ? "Enviando..." : submitted ? "Enlace enviado" : "Enviar enlace"}
 				</Button>
 			</form>

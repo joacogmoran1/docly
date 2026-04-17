@@ -9,6 +9,8 @@
 **/.turbo/
 **/.cache/
 **/.vite/
+**/playwright-report/
+**/test-results/
 **/*.tsbuildinfo
 
 # Environment and local config
@@ -16,6 +18,7 @@
 **/.env.*
 !**/.env.example
 !**/.env.*.example
+**/stack.env
 **/*.local
 
 # Logs

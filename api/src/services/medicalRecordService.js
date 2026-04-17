@@ -1,4 +1,4 @@
-import { MedicalRecord, Patient, Professional, Appointment, User } from '../database/models/index.js';
+import { MedicalRecord, Patient, Professional, Appointment, User, PatientProfessional } from '../database/models/index.js';
 import ApiError from '../utils/ApiError.js';
 import { Op } from 'sequelize';
 
@@ -56,6 +56,10 @@ class MedicalRecordService {
 		const record = await MedicalRecord.create({
 			...data,
 			date: data.date || new Date(),
+		});
+
+		await PatientProfessional.findOrCreate({
+			where: { patientId: data.patientId, professionalId: data.professionalId },
 		});
 
 		return await this.getById(record.id);

@@ -1,4 +1,4 @@
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import db from '../../config/database.js';
 import crypto from 'crypto';
 
@@ -46,6 +46,10 @@ PasswordResetToken.generateToken = function () {
 	return crypto.randomBytes(32).toString('hex');
 };
 
+PasswordResetToken.hashToken = function (token) {
+	return crypto.createHash('sha256').update(token).digest('hex');
+};
+
 // Método estático para crear token con expiración
 PasswordResetToken.createForUser = async function (userId) {
 	// Invalidar tokens anteriores
@@ -59,11 +63,25 @@ PasswordResetToken.createForUser = async function (userId) {
 
 	const resetToken = await PasswordResetToken.create({
 		userId,
-		token,
+		token: this.hashToken(token),
 		expiresAt,
 	});
 
-	return resetToken;
+	return {
+		token,
+		expiresAt: resetToken.expiresAt,
+	};
+};
+
+PasswordResetToken.cleanup = async function ({ now = new Date() } = {}) {
+	return await PasswordResetToken.destroy({
+		where: {
+			[Op.or]: [
+				{ used: true },
+				{ expiresAt: { [Op.lt]: now } },
+			],
+		},
+	});
 };
 
 export default PasswordResetToken;

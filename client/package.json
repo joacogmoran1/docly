@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "npm run security:static-check && npm run build",
+    "test:staging": "playwright test",
+    "test:staging:headed": "playwright test --headed",
     "security:check": "npm audit --omit=dev",
     "security:static-check": "node ./scripts/security-static-check.mjs"
   },
@@ -23,6 +26,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",

@@ -18,6 +18,7 @@ export interface ApiUserSummary {
 export interface ApiPatientSummary {
   id: string;
   userId: string;
+  dni?: string | null;
   birthDate: string | null;
   gender: "male" | "female" | "other" | null;
   bloodType: string | null;
@@ -72,6 +73,7 @@ export interface ApiHealthInfo {
 export interface ApiPatientProfile {
   id: string;
   userId: string;
+  dni?: string | null;
   birthDate: string | null;
   gender: "male" | "female" | "other" | null;
   bloodType: string | null;
@@ -86,6 +88,12 @@ export interface ApiPatientProfile {
 export interface ApiPatientProfileResponse {
   success: boolean;
   data: ApiPatientProfile;
+}
+
+export interface ApiPatientListResponse {
+  success: boolean;
+  results: number;
+  data: ApiPatientProfile[];
 }
 
 export interface ApiHealthInfoResponse {

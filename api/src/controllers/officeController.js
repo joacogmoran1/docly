@@ -1,6 +1,7 @@
 import catchAsync from '../utils/catchAsync.js';
 import { officeService } from '../services/officeService.js';
 import officeBlockService from '../services/officeBlockService.js';
+import accessControlService from '../services/accessControlService.js';
 
 // =========================================================================
 // CRUD CONSULTORIOS
@@ -30,11 +31,13 @@ export const getByProfessional = catchAsync(async (req, res) => {
 
 export const update = catchAsync(async (req, res) => {
 	const { schedule, ...officeData } = req.body;
+	await accessControlService.getOwnedOffice(req.user, req.params.id);
 	const office = await officeService.update(req.params.id, { ...officeData, schedule });
 	res.status(200).json({ success: true, data: office });
 });
 
 export const deleteOffice = catchAsync(async (req, res) => {
+	await accessControlService.getOwnedOffice(req.user, req.params.id);
 	await officeService.delete(req.params.id);
 	res.status(200).json({ success: true, message: 'Consultorio eliminado exitosamente.' });
 });
@@ -43,12 +46,9 @@ export const deleteOffice = catchAsync(async (req, res) => {
 // BLOQUEOS
 // =========================================================================
 
-/**
- * POST /offices/:officeId/blocks/day
- * Body: { date, reason?, cancelExisting? }
- */
 export const blockDay = catchAsync(async (req, res) => {
 	const { officeId } = req.params;
+	await accessControlService.getOwnedOffice(req.user, officeId);
 	const result = await officeBlockService.blockDay(officeId, req.body);
 
 	res.status(201).json({
@@ -58,12 +58,9 @@ export const blockDay = catchAsync(async (req, res) => {
 	});
 });
 
-/**
- * POST /offices/:officeId/blocks/time-slots
- * Body: { date, slots: [{ startTime, endTime }], reason?, cancelExisting? }
- */
 export const blockTimeSlots = catchAsync(async (req, res) => {
 	const { officeId } = req.params;
+	await accessControlService.getOwnedOffice(req.user, officeId);
 	const result = await officeBlockService.blockTimeSlots(officeId, req.body);
 
 	res.status(201).json({
@@ -73,11 +70,13 @@ export const blockTimeSlots = catchAsync(async (req, res) => {
 	});
 });
 
-/**
- * GET /offices/:officeId/blocks?startDate=&endDate=&date=
- */
 export const getBlocks = catchAsync(async (req, res) => {
 	const { officeId } = req.params;
+	await accessControlService.getOwnedOffice(
+		req.user,
+		officeId,
+		'Solo podes ver los bloqueos de tus propios consultorios.'
+	);
 	const blocks = await officeBlockService.getByOffice(officeId, req.query);
 
 	res.status(200).json({
@@ -87,11 +86,9 @@ export const getBlocks = catchAsync(async (req, res) => {
 	});
 });
 
-/**
- * DELETE /offices/:officeId/blocks/:blockId
- */
 export const deleteBlock = catchAsync(async (req, res) => {
 	const { officeId, blockId } = req.params;
+	await accessControlService.getOwnedOffice(req.user, officeId);
 	await officeBlockService.deleteBlock(officeId, blockId);
 
 	res.status(200).json({
@@ -101,17 +98,12 @@ export const deleteBlock = catchAsync(async (req, res) => {
 });
 
 // =========================================================================
-// CANCELACIÓN EN LOTE
+// CANCELACION EN LOTE
 // =========================================================================
 
-/**
- * POST /offices/:officeId/cancel-day
- * Body: { date, reason? }
- * Cancela todos los turnos del día SIN bloquear.
- * (Para cancelar + bloquear, usar POST /blocks/day con cancelExisting=true)
- */
 export const cancelDay = catchAsync(async (req, res) => {
 	const { officeId } = req.params;
+	await accessControlService.getOwnedOffice(req.user, officeId);
 	const result = await officeBlockService.cancelDayAppointments(officeId, req.body);
 
 	res.status(200).json({

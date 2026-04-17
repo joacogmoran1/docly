@@ -124,6 +124,19 @@ class ProfessionalService {
 	}
 
 	async addToPatientTeam(patientId, professionalId) {
+		const [patient, professional] = await Promise.all([
+			Patient.findByPk(patientId),
+			Professional.findByPk(professionalId),
+		]);
+
+		if (!patient) {
+			throw new ApiError(404, 'Paciente no encontrado.');
+		}
+
+		if (!professional) {
+			throw new ApiError(404, 'Profesional no encontrado.');
+		}
+
 		const [relationship, created] = await PatientProfessional.findOrCreate({
 			where: { patientId, professionalId },
 		});
@@ -136,6 +149,19 @@ class ProfessionalService {
 	}
 
 	async removeFromPatientTeam(patientId, professionalId) {
+		const [patient, professional] = await Promise.all([
+			Patient.findByPk(patientId),
+			Professional.findByPk(professionalId),
+		]);
+
+		if (!patient) {
+			throw new ApiError(404, 'Paciente no encontrado.');
+		}
+
+		if (!professional) {
+			throw new ApiError(404, 'Profesional no encontrado.');
+		}
+
 		const deleted = await PatientProfessional.destroy({
 			where: { patientId, professionalId },
 		});
@@ -195,6 +221,7 @@ class ProfessionalService {
 			SELECT DISTINCT
 				p.id,
 				p.user_id,
+				p.dni,
 				p.birth_date,
 				p.gender,
 				p.blood_type,
@@ -241,6 +268,8 @@ class ProfessionalService {
 			FROM patients p
 			INNER JOIN users u ON p.user_id = u.id
 			WHERE p.id IN (
+				SELECT DISTINCT patient_id FROM patient_professionals WHERE professional_id = :professionalId
+				UNION
 				SELECT DISTINCT patient_id FROM appointments WHERE professional_id = :professionalId
 				UNION
 				SELECT DISTINCT patient_id FROM prescriptions WHERE professional_id = :professionalId
@@ -260,6 +289,7 @@ class ProfessionalService {
 		return patientsData.map(patient => ({
 			id: patient.id,
 			userId: patient.user_id,
+			dni: patient.dni,
 			birthDate: patient.birth_date,
 			gender: patient.gender,
 			bloodType: patient.blood_type,
@@ -290,6 +320,8 @@ class ProfessionalService {
 			`
 			SELECT 1
 			FROM (
+				SELECT patient_id FROM patient_professionals WHERE professional_id = :professionalId AND patient_id = :patientId
+				UNION
 				SELECT patient_id FROM appointments WHERE professional_id = :professionalId AND patient_id = :patientId
 				UNION
 				SELECT patient_id FROM prescriptions WHERE professional_id = :professionalId AND patient_id = :patientId
@@ -337,7 +369,13 @@ class ProfessionalService {
 		});
 
 		const studies = await Study.findAll({
-			where: { patientId },
+			where: {
+				patientId,
+				[Op.or]: [
+					{ professionalId },
+					{ professionalId: null },
+				],
+			},
 			order: [['date', 'DESC']],
 		});
 
@@ -366,7 +404,8 @@ class ProfessionalService {
 	 * Obtener disponibilidad del profesional
 	 * Devuelve consultorios con horarios, turnos ocupados y bloqueos
 	 */
-	async getProfessionalAvailability(professionalId, startDate, endDate) {
+	async getProfessionalAvailability(professionalId, startDate, endDate, options = {}) {
+		const { includeSensitive = false } = options;
 		const offices = await Office.findAll({
 			where: { professionalId },
 			include: [
@@ -411,20 +450,22 @@ class ProfessionalService {
 				schedules: office.schedules || [],
 			})),
 			appointments: appointments.map(apt => ({
-				id: apt.id,
+				id: includeSensitive ? apt.id : `busy-${apt.officeId}-${apt.date}-${apt.time}`,
 				officeId: apt.officeId,
 				date: apt.date,
 				time: apt.time,
 				duration: apt.duration,
 			})),
 			blocks: blocks.map(block => ({
-				id: block.id,
+				id: includeSensitive
+					? block.id
+					: `block-${block.officeId}-${block.date}-${block.type}-${block.startTime ?? 'day'}-${block.endTime ?? 'end'}`,
 				officeId: block.officeId,
 				date: block.date,
 				type: block.type,
 				startTime: block.startTime,
 				endTime: block.endTime,
-				reason: block.reason,
+				reason: includeSensitive ? block.reason : null,
 			})),
 		};
 	}

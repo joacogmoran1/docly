@@ -1,4 +1,6 @@
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+const SAFE_RESOURCE_PROTOCOLS = new Set(["http:", "https:"]);
+const PDF_DATA_URI_PATTERN = /^data:application\/pdf;base64,[a-z0-9+/=\s]+=*$/i;
 
 export function sanitizeSingleLineInput(value: string, maxLength = 255) {
   return value
@@ -39,4 +41,29 @@ export function sanitizeInternalPath(
   if (sanitized.includes("://")) return fallback;
 
   return sanitized;
+}
+
+export function sanitizeStudyResourceUrl(
+  value: string | null | undefined,
+  options?: { allowPdfDataUri?: boolean },
+) {
+  if (!value) return null;
+
+  const sanitized = value.replace(CONTROL_CHARS, "").trim();
+  if (!sanitized) return null;
+
+  if (options?.allowPdfDataUri && PDF_DATA_URI_PATTERN.test(sanitized)) {
+    return sanitized;
+  }
+
+  try {
+    const parsed = new URL(sanitized);
+    if (!SAFE_RESOURCE_PROTOCOLS.has(parsed.protocol)) {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }

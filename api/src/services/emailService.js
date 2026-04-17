@@ -1,12 +1,6 @@
 import nodemailer from 'nodemailer';
 import logger from '../utils/logger.js';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Transporte
-// ─────────────────────────────────────────────────────────────────────────────
-// En producción se espera SMTP real (SendGrid, SES, Mailgun, etc.).
-// En desarrollo se usa Ethereal si no hay credenciales configuradas.
-// ─────────────────────────────────────────────────────────────────────────────
+import env from '../config/env.js';
 
 let transporterPromise = null;
 
@@ -14,31 +8,35 @@ async function getTransporter() {
 	if (transporterPromise) return transporterPromise;
 
 	transporterPromise = (async () => {
-		if (process.env.SMTP_HOST) {
+		if (!env.email.host) {
+			if (env.nodeEnv === 'production') {
+				throw new Error('SMTP_HOST es obligatorio en producción.');
+			}
+
+			const testAccount = await nodemailer.createTestAccount();
+			logger.info({
+				message: 'Usando cuenta Ethereal para emails de desarrollo.',
+				user: testAccount.user,
+			});
+
 			return nodemailer.createTransport({
-				host: process.env.SMTP_HOST,
-				port: parseInt(process.env.SMTP_PORT || '587', 10),
-				secure: process.env.SMTP_SECURE === 'true',
+				host: 'smtp.ethereal.email',
+				port: 587,
+				secure: false,
 				auth: {
-					user: process.env.SMTP_USER,
-					pass: process.env.SMTP_PASS,
+					user: testAccount.user,
+					pass: testAccount.pass,
 				},
 			});
 		}
 
-		// Fallback a Ethereal para desarrollo
-		const testAccount = await nodemailer.createTestAccount();
-		logger.info('📧 Usando cuenta Ethereal para emails de desarrollo', {
-			user: testAccount.user,
-		});
-
 		return nodemailer.createTransport({
-			host: 'smtp.ethereal.email',
-			port: 587,
-			secure: false,
+			host: env.email.host,
+			port: env.email.port,
+			secure: env.email.secure,
 			auth: {
-				user: testAccount.user,
-				pass: testAccount.pass,
+				user: env.email.user,
+				pass: env.email.pass,
 			},
 		});
 	})();
@@ -46,55 +44,50 @@ async function getTransporter() {
 	return transporterPromise;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-const FROM_ADDRESS = process.env.EMAIL_FROM || '"Docly" <no-reply@docly.app>';
-
 async function sendMail({ to, subject, text, html }) {
 	const transporter = await getTransporter();
 
 	const info = await transporter.sendMail({
-		from: FROM_ADDRESS,
+		from: env.email.from,
 		to,
 		subject,
 		text,
 		html,
 	});
 
-	// En desarrollo con Ethereal, loguear la URL de preview
 	const previewUrl = nodemailer.getTestMessageUrl(info);
 	if (previewUrl) {
-		logger.info(`📧 Preview del email: ${previewUrl}`);
+		logger.info({ message: 'Preview del email disponible.', previewUrl });
 	}
 
-	logger.info(`📧 Email enviado a ${to} — messageId: ${info.messageId}`);
+	logger.info({ message: 'Email enviado.', to, messageId: info.messageId });
 
 	return { messageId: info.messageId, previewUrl: previewUrl || null };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Emails específicos
-// ─────────────────────────────────────────────────────────────────────────────
-
 class EmailService {
+	async assertProductionReadiness() {
+		if (env.nodeEnv !== 'production') {
+			return;
+		}
+
+		await getTransporter();
+	}
+
 	async sendPasswordResetEmail(email, token) {
-		const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-		const resetLink = `${frontendUrl}/auth/reset-password?token=${token}`;
-
-		const subject = 'Docly — Restablecer contraseña';
-
+		const frontendBaseUrl = env.cors.allowedOrigins[0] || 'http://localhost:3000';
+		const resetLink = `${frontendBaseUrl}/auth/reset-password?token=${token}`;
+		const subject = 'Docly - Restablecer contraseña';
 		const text = [
 			'Recibimos una solicitud para restablecer tu contraseña en Docly.',
 			'',
-			`Hacé clic en el siguiente enlace para crear una nueva contraseña:`,
+			'Hacé clic en el siguiente enlace para crear una nueva contraseña:',
 			resetLink,
 			'',
 			'Este enlace expira en 1 hora.',
 			'Si no solicitaste este cambio, podés ignorar este email.',
 			'',
-			'— Equipo Docly',
+			'- Equipo Docly',
 		].join('\n');
 
 		const html = `
@@ -114,7 +107,7 @@ class EmailService {
 					Si no solicitaste este cambio, podés ignorar este email.
 				</p>
 				<hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-				<p style="color: #aaa; font-size: 0.8rem;">Docly — Salud digital simple</p>
+				<p style="color: #aaa; font-size: 0.8rem;">Docly - Salud digital simple</p>
 			</div>
 		`;
 
@@ -122,15 +115,14 @@ class EmailService {
 	}
 
 	async sendEmailChangeNotification(oldEmail, newEmail) {
-		const subject = 'Docly — Tu email fue actualizado';
-
+		const subject = 'Docly - Tu email fue actualizado';
 		const text = [
 			'Te informamos que el email de tu cuenta en Docly fue actualizado.',
 			`Nuevo email: ${newEmail}`,
 			'',
 			'Si no realizaste este cambio, contactá a soporte inmediatamente.',
 			'',
-			'— Equipo Docly',
+			'- Equipo Docly',
 		].join('\n');
 
 		const html = `
@@ -143,7 +135,7 @@ class EmailService {
 					Si no realizaste este cambio, contactá a soporte inmediatamente.
 				</p>
 				<hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-				<p style="color: #aaa; font-size: 0.8rem;">Docly — Salud digital simple</p>
+				<p style="color: #aaa; font-size: 0.8rem;">Docly - Salud digital simple</p>
 			</div>
 		`;
 
@@ -151,14 +143,13 @@ class EmailService {
 	}
 
 	async sendAccountDeletedNotification(email) {
-		const subject = 'Docly — Cuenta eliminada';
-
+		const subject = 'Docly - Cuenta eliminada';
 		const text = [
 			'Tu cuenta en Docly fue desactivada exitosamente.',
 			'',
 			'Si querés reactivarla en el futuro, contactá a soporte.',
 			'',
-			'— Equipo Docly',
+			'- Equipo Docly',
 		].join('\n');
 
 		const html = `
@@ -171,7 +162,7 @@ class EmailService {
 					Si querés reactivarla en el futuro, contactá a soporte.
 				</p>
 				<hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
-				<p style="color: #aaa; font-size: 0.8rem;">Docly — Salud digital simple</p>
+				<p style="color: #aaa; font-size: 0.8rem;">Docly - Salud digital simple</p>
 			</div>
 		`;
 

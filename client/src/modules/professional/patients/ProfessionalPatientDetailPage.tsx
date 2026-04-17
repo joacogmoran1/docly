@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { getProfessionalPatientDetail } from "@/modules/professional/api/professional.api";
@@ -14,13 +14,25 @@ import { formatNumericDate, formatNumericTime } from "@/shared/utils/date";
 
 export function ProfessionalPatientDetailPage() {
   const { user } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const { patientId = "" } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(searchParams.get("tab") ?? "profile");
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
   const [isCreatingPrescription, setIsCreatingPrescription] = useState(false);
+  const [feedback, setFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const professionalId = user?.professionalId ?? "";
+
+  useEffect(() => {
+    const nextFeedback = (location.state as { feedback?: { tone: "success" | "error"; message: string } } | null)?.feedback;
+    if (!nextFeedback) {
+      return;
+    }
+
+    setFeedback(nextFeedback);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.pathname, location.search, location.state, navigate]);
 
   const query = useQuery({
     queryKey: [...queryKeys.professionalPatientDetail(patientId), professionalId],
@@ -229,6 +241,14 @@ export function ProfessionalPatientDetailPage() {
 
   return (
     <div className="page-stack">
+      {feedback ? (
+        <div className={`feedback-banner${feedback.tone === "error" ? " is-error" : " is-success"}`}>
+          <span>{feedback.message}</span>
+          <Button variant="ghost" className="button-inline" onClick={() => setFeedback(null)}>
+            Cerrar
+          </Button>
+        </div>
+      ) : null}
       <div className="subpage-header subpage-header-reverse">
         <div className="tabs-list">
           {tabs.map((item) => (

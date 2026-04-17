@@ -49,34 +49,41 @@ export function ResetPasswordPage() {
       </div>
 
       {!token ? (
-        <div className="panel">
+        <div className="panel" data-testid="reset-password-missing-token">
           <strong>Falta el token</strong>
           <p className="meta">
             Abre el enlace de recuperacion completo o solicita uno nuevo.
           </p>
         </div>
       ) : (
-        <form className="stack-md" onSubmit={onSubmit}>
+        <form className="stack-md" onSubmit={onSubmit} data-testid="reset-password-form">
           <Input
             label="Nueva contrasena"
             type="password"
             error={errors.password?.message}
+            data-testid="reset-password-new"
             {...register("password")}
           />
           <Input
             label="Confirmar contrasena"
             type="password"
             error={errors.confirmPassword?.message}
+            data-testid="reset-password-confirm"
             {...register("confirmPassword")}
           />
           {successMessage ? (
-            <div className="panel">
+            <div className="panel" data-testid="reset-password-success">
               <strong>Contrasena actualizada</strong>
               <p className="meta">{successMessage}</p>
             </div>
           ) : null}
           {serverError ? <span className="field-error">{serverError}</span> : null}
-          <Button type="submit" fullWidth disabled={isSubmitting}>
+          <Button
+            type="submit"
+            fullWidth
+            disabled={isSubmitting}
+            data-testid="reset-password-submit"
+          >
             {isSubmitting ? "Actualizando..." : "Guardar nueva contrasena"}
           </Button>
         </form>

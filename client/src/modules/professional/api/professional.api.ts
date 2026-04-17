@@ -16,6 +16,7 @@ import type {
 	ApiOfficeBlockManyResponse,
 	ApiOfficeBlockResponse,
 	ApiOfficeResponse,
+	ApiPatientListResponse,
 	ApiProfessionalPatientDetailResponse,
 	ApiProfessionalPatientListResponse,
 	ApiProfessionalProfileResponse,
@@ -284,6 +285,19 @@ export async function getProfessionalPatients(professionalId: string) {
 		return mapProfessionalPatientsToListItems(response.data.data);
 	} catch (error) {
 		throw new Error(getApiErrorMessage(error, "No se pudieron cargar los pacientes."));
+	}
+}
+
+export async function searchPatientsForProfessional(query: string) {
+	try {
+		const response = await apiClient.get<ApiPatientListResponse>('/patients/search', {
+			params: {
+				q: query || undefined,
+			},
+		});
+		return response.data.data;
+	} catch (error) {
+		throw new Error(getApiErrorMessage(error, 'No se pudieron buscar pacientes.'));
 	}
 }
 

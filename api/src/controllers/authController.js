@@ -13,6 +13,15 @@ export const register = catchAsync(async (req, res) => {
 	});
 });
 
+export const getCsrfToken = catchAsync(async (req, res) => {
+	const csrfToken = authService.issueCsrfCookie(res);
+
+	res.status(200).json({
+		success: true,
+		csrfToken,
+	});
+});
+
 export const login = catchAsync(async (req, res) => {
 	const { email, password } = req.body;
 	const { user } = await authService.login(email, password);
@@ -64,6 +73,7 @@ export const refresh = catchAsync(async (req, res) => {
 });
 
 export const getProfile = catchAsync(async (req, res) => {
+	authService.issueCsrfCookie(res);
 	const user = await authService.getProfile(req.user.id);
 
 	res.status(200).json({

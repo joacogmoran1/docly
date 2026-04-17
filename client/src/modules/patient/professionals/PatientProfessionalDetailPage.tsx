@@ -14,7 +14,7 @@ import { Select } from "@/shared/ui/Select";
 import { Card } from "@/shared/ui/Card";
 import { Button } from "@/shared/ui/Button";
 import { getAgendaForDate } from "@/shared/utils/agenda";
-import { formatNumericDate } from "@/shared/utils/date";
+import { formatNumericDate, isPastScheduleSlot } from "@/shared/utils/date";
 import type { ApiOfficeBlock } from "@/shared/types/api";
 
 function getToday() {
@@ -146,10 +146,28 @@ export function PatientProfessionalDetailPage() {
     () => getAgendaForDate(agenda, selectedDate, officeFilter),
     [agenda, officeFilter, selectedDate],
   );
+
+  const preventPastBooking = (slot: { time: string; officeId: string; officeName?: string }) => {
+    if (!isPastScheduleSlot(selectedDate, slot.time)) {
+      return false;
+    }
+
+    setBookingFeedback({
+      tone: "error",
+      message: `Ese horario del ${formatNumericDate(selectedDate)} a las ${slot.time} ya paso y no se puede agendar.`,
+    });
+    setSlotToBook(null);
+    return true;
+  };
+
   const createAppointmentMutation = useMutation({
     mutationFn: () => {
       if (!patientId || !slotToBook) {
         throw new Error("No se pudo preparar el turno.");
+      }
+
+      if (isPastScheduleSlot(selectedDate, slotToBook.time)) {
+        throw new Error("No se pueden agendar turnos en horarios pasados.");
       }
 
       return createAppointment({
@@ -247,7 +265,10 @@ export function PatientProfessionalDetailPage() {
               dateLabel={formatNumericDate(selectedDate)}
               items={dayItems}
               mode="patient"
-              onSelectFreeSlot={(slot) => setSlotToBook(slot)}
+              onSelectFreeSlot={(slot) => {
+                if (preventPastBooking(slot)) return;
+                setSlotToBook(slot);
+              }}
             />
           </div>
         </div>
@@ -378,6 +399,7 @@ export function PatientProfessionalDetailPage() {
         onClose={() => setSlotToBook(null)}
         onConfirm={() => {
           if (createAppointmentMutation.isPending) return;
+          if (slotToBook && preventPastBooking(slotToBook)) return;
           createAppointmentMutation.mutate();
         }}
       />

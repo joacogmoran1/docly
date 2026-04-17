@@ -5,6 +5,7 @@ import { mapStudyToItem } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { StudyDetailView } from "@/shared/components/StudyDetailView";
 import { SubpageShell } from "@/shared/components/SubpageShell";
+import { Button } from "@/shared/ui/Button";
 
 export function ProfessionalPatientStudyDetailPage() {
   const navigate = useNavigate();
@@ -19,7 +20,14 @@ export function ProfessionalPatientStudyDetailPage() {
   if (query.isError || !query.data) return <div className="centered-feedback">No pudimos cargar el estudio.</div>;
 
   return (
-    <SubpageShell onBack={() => navigate(`/professional/patients/${patientId}?tab=studies`)}>
+    <SubpageShell
+      onBack={() => navigate(`/professional/patients/${patientId}?tab=studies`)}
+      headerAction={
+        <Button variant="ghost" onClick={() => navigate(`/professional/studies/${studyId}`)}>
+          Abrir en modulo
+        </Button>
+      }
+    >
       <StudyDetailView study={mapStudyToItem(query.data)} />
     </SubpageShell>
   );

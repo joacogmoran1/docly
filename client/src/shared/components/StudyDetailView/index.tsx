@@ -9,6 +9,13 @@ interface StudyDetailViewProps {
 export function StudyDetailView({ study }: StudyDetailViewProps) {
   const attachmentUrls = study.attachmentUrls ?? study.images;
   const isImageStudy = study.attachmentKind === "image";
+  const getAttachmentLabel = (attachment: string) => {
+    if (attachment.startsWith("data:application/pdf")) {
+      return isImageStudy ? "Archivo adjunto del estudio" : "Resultados en PDF";
+    }
+
+    return attachment;
+  };
 
   return (
     <>
@@ -45,13 +52,7 @@ export function StudyDetailView({ study }: StudyDetailViewProps) {
           <div className="plain-list">
             {attachmentUrls.map((attachment) => (
               <div key={attachment} className="list-row">
-                <span>
-                  {attachment.startsWith("data:")
-                    ? isImageStudy
-                      ? "Imagen del estudio"
-                      : "Resultados en PDF"
-                    : attachment}
-                </span>
+                <span>{getAttachmentLabel(attachment)}</span>
                 <a href={attachment} target="_blank" rel="noreferrer" className="helper-text">
                   {isImageStudy ? "Abrir imagen" : "Abrir PDF"}
                 </a>

@@ -9,8 +9,8 @@ import {
 import {
   getOfficeBlocks,
   getProfessionalOfficesData,
-  getProfessionalPatients,
 } from "@/modules/professional/api/professional.api";
+import type { ProfessionalSelectablePatient } from "@/modules/professional/patients/ProfessionalPatientSelector";
 import { buildAgendaFromSchedules } from "@/services/api/mappers";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { BookAppointmentModal } from "@/shared/components/BookAppointmentModal";
@@ -21,7 +21,7 @@ import { Button } from "@/shared/ui/Button";
 import { Select } from "@/shared/ui/Select";
 import { queryKeys } from "@/shared/constants/query-keys";
 import { getAgendaForDate } from "@/shared/utils/agenda";
-import { formatNumericDate } from "@/shared/utils/date";
+import { formatNumericDate, isPastScheduleSlot } from "@/shared/utils/date";
 import type { ApiOfficeBlock } from "@/shared/types/api";
 
 function getToday() {
@@ -164,12 +164,6 @@ export function ProfessionalSchedulePage() {
     },
     enabled: Boolean(officesQuery.data),
   });
-  const patientsQuery = useQuery({
-    queryKey: [...queryKeys.professionalPatients, professionalId, "schedule"],
-    queryFn: () => getProfessionalPatients(professionalId),
-    enabled: Boolean(professionalId),
-  });
-
   const agenda = useMemo(() => {
     if (!agendaQuery.data || !officesQuery.data) return [];
     const baseAgenda = buildAgendaFromSchedules(
@@ -187,24 +181,38 @@ export function ProfessionalSchedulePage() {
     () => getAgendaForDate(agenda, selectedDate, officeFilter),
     [agenda, officeFilter, selectedDate],
   );
-  const patientOptions = useMemo(
-    () =>
-      (patientsQuery.data ?? []).map((patient) => ({
-        id: patient.id,
-        fullName: patient.fullName,
-        meta: patient.email ?? patient.phone ?? patient.document,
-      })),
-    [patientsQuery.data],
-  );
+
+  const preventPastScheduling = (slot: { time: string; officeId: string; officeName?: string }) => {
+    if (!isPastScheduleSlot(selectedDate, slot.time)) {
+      return false;
+    }
+
+    setCalendarFeedback({
+      tone: "error",
+      message: `Ese horario del ${formatNumericDate(selectedDate)} a las ${slot.time} ya paso y no se puede agendar.`,
+    });
+    setSlotToSchedule(null);
+    return true;
+  };
+
   const createAppointmentMutation = useMutation({
-    mutationFn: (patientId: string) =>
-      createAppointment({
-        patientId,
-        officeId: slotToSchedule?.officeId ?? "",
+    mutationFn: (patient: ProfessionalSelectablePatient) => {
+      if (!slotToSchedule) {
+        throw new Error("No se pudo preparar el turno.");
+      }
+
+      if (isPastScheduleSlot(selectedDate, slotToSchedule.time)) {
+        throw new Error("No se pueden agendar turnos en horarios pasados.");
+      }
+
+      return createAppointment({
+        patientId: patient.id,
+        officeId: slotToSchedule.officeId,
         date: selectedDate,
-        time: slotToSchedule?.time ?? "",
-      }),
-    onSuccess: async () => {
+        time: slotToSchedule.time,
+      });
+    },
+    onSuccess: async (_, patient) => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: [...queryKeys.professionalAppointments, professionalId],
@@ -212,12 +220,23 @@ export function ProfessionalSchedulePage() {
         queryClient.invalidateQueries({
           queryKey: [...queryKeys.professionalSchedule, professionalId],
         }),
+        queryClient.invalidateQueries({
+          queryKey: [...queryKeys.professionalPatients, professionalId],
+        }),
       ]);
       setCalendarFeedback({
         tone: "success",
         message: slotToSchedule
-          ? `Turno creado para el ${formatNumericDate(selectedDate)} a las ${slotToSchedule.time}${slotToSchedule.officeName ? ` en ${slotToSchedule.officeName}` : ""}. Queda pendiente de confirmacion del paciente.`
-          : "Turno creado. Queda pendiente de confirmacion del paciente.",
+          ? `${patient.isLinked ? "Turno creado" : "Turno creado y primer vinculo registrado"} para ${patient.fullName} el ${formatNumericDate(selectedDate)} a las ${slotToSchedule.time}${slotToSchedule.officeName ? ` en ${slotToSchedule.officeName}` : ""}. Queda pendiente de confirmacion del paciente.`
+          : patient.isLinked
+            ? "Turno creado. Queda pendiente de confirmacion del paciente."
+            : `Turno creado y primer vinculo registrado para ${patient.fullName}. Queda pendiente de confirmacion del paciente.`,
+      });
+    },
+    onError: (error) => {
+      setCalendarFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : "No se pudo crear el turno.",
       });
     },
   });
@@ -273,14 +292,13 @@ export function ProfessionalSchedulePage() {
     },
   });
 
-  if (agendaQuery.isLoading || officesQuery.isLoading || blocksQuery.isLoading || patientsQuery.isLoading) {
+  if (agendaQuery.isLoading || officesQuery.isLoading || blocksQuery.isLoading) {
     return <div className="centered-feedback">Cargando agenda...</div>;
   }
   if (
     agendaQuery.isError ||
     officesQuery.isError ||
     blocksQuery.isError ||
-    patientsQuery.isError ||
     !agendaQuery.data ||
     !officesQuery.data
   ) {
@@ -347,7 +365,10 @@ export function ProfessionalSchedulePage() {
           title="Turnos del dia"
           dateLabel={formatNumericDate(selectedDate)}
           items={dayItems}
-          onSelectFreeSlot={(slot) => setSlotToSchedule(slot)}
+          onSelectFreeSlot={(slot) => {
+            if (preventPastScheduling(slot)) return;
+            setSlotToSchedule(slot);
+          }}
           onCancelBookedSlot={(appointmentId) => setAppointmentToCancel(appointmentId)}
           onCompleteBookedSlot={(appointmentId) => setAppointmentToComplete(appointmentId)}
         />
@@ -355,17 +376,19 @@ export function ProfessionalSchedulePage() {
 
       <BookAppointmentModal
         isOpen={Boolean(slotToSchedule)}
+        professionalId={professionalId}
         title="Agendar paciente"
         description={
           slotToSchedule
             ? `Horario seleccionado ${selectedDate} ${slotToSchedule.time}${slotToSchedule.officeName ? ` en ${slotToSchedule.officeName}` : ""}`
             : undefined
         }
-        patients={patientOptions}
+        newPatientMessage="Si eliges un paciente nuevo, este turno va a crear el primer vinculo con tu agenda profesional."
         isSubmitting={createAppointmentMutation.isPending}
         onClose={() => setSlotToSchedule(null)}
-        onConfirm={async (patientId) => {
-          await createAppointmentMutation.mutateAsync(patientId);
+        onConfirm={async (patient) => {
+          if (!slotToSchedule || preventPastScheduling(slotToSchedule)) return;
+          await createAppointmentMutation.mutateAsync(patient);
           setSlotToSchedule(null);
         }}
       />

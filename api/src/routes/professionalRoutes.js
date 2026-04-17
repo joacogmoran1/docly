@@ -1,11 +1,12 @@
 import express from 'express';
 import * as professionalController from '../controllers/professionalController.js';
 import { protect, restrictTo } from '../middleware/auth.js';
+import { agendaReadLimiter, searchLimiter } from '../middleware/rateLimiter.js';
 
 const router = express.Router();
 
 // ── Búsqueda (cualquier usuario autenticado) ─────────────────────────────
-router.get('/search', protect, professionalController.search);
+router.get('/search', protect, searchLimiter, professionalController.search);
 router.get('/:id', protect, professionalController.getById);
 
 // ── Perfil (solo el profesional dueño) ──────────────────────────────────
@@ -17,7 +18,12 @@ router.put('/:id/signature', protect, restrictTo('professional'), professionalCo
 router.delete('/:id/signature', protect, restrictTo('professional'), professionalController.deleteSignature);
 
 // ── Disponibilidad ──────────────────────────────────────────────────────
-router.get('/:professionalId/availability', protect, professionalController.getProfessionalAvailability);
+router.get(
+	'/:professionalId/availability',
+	protect,
+	agendaReadLimiter,
+	professionalController.getProfessionalAvailability
+);
 
 // ── Pacientes del profesional ───────────────────────────────────────────
 router.get(

@@ -83,6 +83,9 @@ export function ProfessionalPatientPrescriptionDetailPage() {
               >
                 {downloadMutation.isPending ? "Descargando PDF..." : "Descargar PDF"}
               </Button>
+              <Button variant="ghost" onClick={() => navigate(`/professional/prescriptions/${prescriptionId}`)}>
+                Abrir en modulo
+              </Button>
               <Button onClick={() => setIsEditing(true)}>
                 Editar receta
               </Button>

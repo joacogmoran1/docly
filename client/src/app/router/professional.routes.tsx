@@ -11,10 +11,15 @@ import { ProfessionalPatientRecordDetailPage } from "@/modules/professional/pati
 import { ProfessionalPatientStudyDetailPage } from "@/modules/professional/patients/ProfessionalPatientStudyDetailPage";
 import { ProfessionalPatientsPage } from "@/modules/professional/patients/ProfessionalPatientsPage";
 import { ProfessionalConsultationRecordPage } from "@/modules/professional/patients/ProfessionalConsultationRecordPage";
+import { ProfessionalMedicalRecordDetailPage } from "@/modules/professional/records/ProfessionalMedicalRecordDetailPage";
+import { ProfessionalMedicalRecordsPage } from "@/modules/professional/records/ProfessionalMedicalRecordsPage";
+import { ProfessionalPrescriptionDetailPage } from "@/modules/professional/prescriptions/ProfessionalPrescriptionDetailPage";
 import { ProfessionalPrescriptionsPage } from "@/modules/professional/prescriptions/ProfessionalPrescriptionsPage";
 import { ProfessionalProfilePage } from "@/modules/professional/profile/ProfessionalProfilePage";
 import { ProfessionalSchedulePage } from "@/modules/professional/schedule/ProfessionalSchedulePage";
 import { ProfessionalSettingsPage } from "@/modules/professional/settings/ProfessionalSettingsPage";
+import { ProfessionalStudiesPage } from "@/modules/professional/studies/ProfessionalStudiesPage";
+import { ProfessionalStudyDetailPage } from "@/modules/professional/studies/ProfessionalStudyDetailPage";
 
 export const professionalRoutes: RouteObject = {
   path: "professional",
@@ -28,6 +33,8 @@ export const professionalRoutes: RouteObject = {
           element: <PermissionGuard permission="patients:read" />,
           children: [
             { path: "patients", element: <ProfessionalPatientsPage /> },
+            { path: "records", element: <ProfessionalMedicalRecordsPage /> },
+            { path: "records/:recordId", element: <ProfessionalMedicalRecordDetailPage /> },
             { path: "patients/:patientId", element: <ProfessionalPatientDetailPage /> },
             { path: "patients/:patientId/records/:recordId", element: <ProfessionalPatientRecordDetailPage /> },
             { path: "patients/:patientId/studies/:studyId", element: <ProfessionalPatientStudyDetailPage /> },
@@ -43,7 +50,10 @@ export const professionalRoutes: RouteObject = {
         },
         { path: "offices", element: <ProfessionalOfficesPage /> },
         { path: "offices/:officeId", element: <ProfessionalOfficeDetailPage /> },
+        { path: "studies", element: <ProfessionalStudiesPage /> },
+        { path: "studies/:studyId", element: <ProfessionalStudyDetailPage /> },
         { path: "prescriptions", element: <ProfessionalPrescriptionsPage /> },
+        { path: "prescriptions/:prescriptionId", element: <ProfessionalPrescriptionDetailPage /> },
         { path: "schedule", element: <ProfessionalSchedulePage /> },
         { path: "profile", element: <ProfessionalProfilePage /> },
         { path: "settings", element: <ProfessionalSettingsPage /> },

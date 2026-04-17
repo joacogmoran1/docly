@@ -15,6 +15,7 @@ interface PatientPrescriptionFilters {
 
 interface ProfessionalPrescriptionFilters {
   patientId?: string;
+  search?: string;
 }
 
 interface CreatePrescriptionInput {
@@ -107,6 +108,7 @@ export async function getProfessionalPrescriptions(
       {
         params: {
           patientId: filters?.patientId || undefined,
+          search: filters?.search || undefined,
         },
       },
     );

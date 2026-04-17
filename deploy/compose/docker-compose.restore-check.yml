@@ -1,0 +1,70 @@
+services:
+  postgres-restore:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DOCLY_RESTORE_DB_NAME:-docly_restore}
+      POSTGRES_USER: ${DOCLY_RESTORE_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DOCLY_RESTORE_DB_PASSWORD:-restore-check}
+    ports:
+      - "${DOCLY_RESTORE_DB_PORT:-55432}:5432"
+    volumes:
+      - postgres_restore_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DOCLY_RESTORE_DB_USER:-postgres} -d ${DOCLY_RESTORE_DB_NAME:-docly_restore}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis-restore:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-restore:
+    build:
+      context: ../../api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      TRUST_PROXY: false
+      DB_HOST: postgres-restore
+      DB_PORT: 5432
+      DB_NAME: ${DOCLY_RESTORE_DB_NAME:-docly_restore}
+      DB_USER: ${DOCLY_RESTORE_DB_USER:-postgres}
+      DB_PASSWORD: ${DOCLY_RESTORE_DB_PASSWORD:-restore-check}
+      RATE_LIMIT_STORE: redis
+      REDIS_HOST: redis-restore
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      FRONTEND_URLS: http://localhost:3000
+      JWT_SECRET: restore-check-jwt-secret-not-for-production
+      CSRF_SECRET: restore-check-csrf-secret-not-for-production
+      AUTH_COOKIE_SECURE: false
+      AUTH_COOKIE_SAME_SITE: lax
+      SMTP_HOST: smtp.restore-check.local
+      SMTP_PORT: 587
+      SMTP_USER: restore-check
+      SMTP_PASS: restore-check
+      LOG_TO_FILES: false
+    depends_on:
+      postgres-restore:
+        condition: service_healthy
+      redis-restore:
+        condition: service_healthy
+    command: ["npm", "run", "start"]
+    ports:
+      - "${DOCLY_RESTORE_API_PORT:-14000}:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+volumes:
+  postgres_restore_data:

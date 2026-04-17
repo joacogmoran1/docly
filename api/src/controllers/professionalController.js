@@ -1,4 +1,5 @@
 import professionalService from '../services/professionalService.js';
+import accessControlService from '../services/accessControlService.js';
 import { Professional } from '../database/models/index.js';
 import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
@@ -20,34 +21,71 @@ export const getById = catchAsync(async (req, res) => {
 });
 
 export const updateProfile = catchAsync(async (req, res) => {
+	accessControlService.assertProfessionalSelf(
+		req.user,
+		req.params.id,
+		'Solo podés modificar tu propio perfil.'
+	);
+
 	const professional = await professionalService.updateProfile(req.params.id, req.body);
 	res.status(200).json({ success: true, data: professional });
 });
 
 export const addToPatientTeam = catchAsync(async (req, res) => {
 	const { patientId, professionalId } = req.params;
+	accessControlService.assertPatientSelf(
+		req.user,
+		patientId,
+		'Solo podés administrar tu propio equipo médico.'
+	);
+
 	await professionalService.addToPatientTeam(patientId, professionalId);
 	res.status(201).json({ success: true, message: 'Profesional agregado al equipo exitosamente.' });
 });
 
 export const removeFromPatientTeam = catchAsync(async (req, res) => {
 	const { patientId, professionalId } = req.params;
+	accessControlService.assertPatientSelf(
+		req.user,
+		patientId,
+		'Solo podés administrar tu propio equipo médico.'
+	);
+
 	await professionalService.removeFromPatientTeam(patientId, professionalId);
 	res.status(200).json({ success: true, message: 'Profesional removido del equipo.' });
 });
 
 export const getPatientProfessionals = catchAsync(async (req, res) => {
+	await accessControlService.assertPatientOrLinkedProfessional(
+		req.user,
+		req.params.patientId,
+		'Solo podés ver tu propio equipo médico.',
+		'No tenés permiso para ver el equipo médico de este paciente.'
+	);
+
 	const professionals = await professionalService.getPatientProfessionals(req.params.patientId);
 	res.status(200).json({ success: true, results: professionals.length, data: professionals });
 });
 
 export const getProfessionalPatients = catchAsync(async (req, res) => {
+	accessControlService.assertProfessionalSelf(
+		req.user,
+		req.params.professionalId,
+		'Solo podés ver tus propios pacientes.'
+	);
+
 	const patients = await professionalService.getProfessionalPatients(req.params.professionalId);
 	res.status(200).json({ success: true, results: patients.length, data: patients });
 });
 
 export const getProfessionalPatient = catchAsync(async (req, res) => {
 	const { professionalId, patientId } = req.params;
+	accessControlService.assertProfessionalSelf(
+		req.user,
+		professionalId,
+		'Solo podés ver tus propios pacientes.'
+	);
+
 	const patient = await professionalService.getProfessionalPatient(professionalId, patientId);
 	res.status(200).json({ success: true, data: patient });
 });
@@ -55,7 +93,14 @@ export const getProfessionalPatient = catchAsync(async (req, res) => {
 export const getProfessionalAvailability = catchAsync(async (req, res) => {
 	const { professionalId } = req.params;
 	const { startDate, endDate } = req.query;
-	const availability = await professionalService.getProfessionalAvailability(professionalId, startDate, endDate);
+	const includeSensitive =
+		req.user.role === 'professional' && req.user.professional?.id === professionalId;
+	const availability = await professionalService.getProfessionalAvailability(
+		professionalId,
+		startDate,
+		endDate,
+		{ includeSensitive }
+	);
 	res.status(200).json({ success: true, data: availability });
 });
 

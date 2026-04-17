@@ -1,5 +1,7 @@
 import { rolePermissions } from "@/services/permissions/permissions";
 import { getStudyTypeDefinition } from "@/shared/constants/medical-options";
+import { sanitizeStudyResourceUrl } from "@/shared/utils/sanitize";
+import { isPastScheduleSlot } from "@/shared/utils/date";
 import type {
 	ApiAppointment,
 	ApiAppointmentStatus,
@@ -101,14 +103,15 @@ function parseStudyAttachments(value: string | null | undefined) {
 		return [];
 	}
 
-	if (source.startsWith("data:")) {
-		return [source];
+	if (source.trim().startsWith("data:")) {
+		const attachment = sanitizeStudyResourceUrl(source, { allowPdfDataUri: true });
+		return attachment ? [attachment] : [];
 	}
 
 	return source
 		.split(",")
-		.map((item) => item.trim())
-		.filter(Boolean);
+		.map((item) => sanitizeStudyResourceUrl(item))
+		.filter((item): item is string => Boolean(item));
 }
 
 function buildFullName(name: string, lastName?: string | null) {
@@ -424,7 +427,9 @@ export function buildAgendaFromSchedules(
 				date,
 				officeId: office.id,
 				officeName: office.name,
-				freeSlots: allSlots.filter((slot) => !bookedTimes.has(slot)),
+				freeSlots: allSlots.filter(
+					(slot) => !bookedTimes.has(slot) && !isPastScheduleSlot(date, slot),
+				),
 				bookedSlots,
 				blockedSlots: [],
 				fullDayBlocked: false,
@@ -492,7 +497,7 @@ export function mapStudyToItem(study: ApiStudy): StudyItem {
 		: "Paciente";
 	const definition = getStudyTypeDefinition(study.type);
 	const attachmentUrls = parseStudyAttachments(study.fileUrl);
-	const reportUrl = safeText(study.results);
+	const reportUrl = sanitizeStudyResourceUrl(study.results, { allowPdfDataUri: true }) ?? "";
 	const isAvailable = Boolean(attachmentUrls.length || reportUrl);
 	const attachmentLabel =
 		definition.attachmentKind === "image"
@@ -568,7 +573,7 @@ export function mapProfessionalPatientsToListItems(
 			id: patient.id,
 			fullName: buildFullName(patient.user.name, patient.user.lastName),
 			age: Number.isFinite(age) ? age : 0,
-			document: patient.user.email,
+			document: safeText(patient.dni, patient.user.email),
 			phone: safeText(patient.user.phone),
 			coverage: patient.medicalCoverage ?? "Sin cobertura",
 			lastVisit: patient.stats.lastAppointmentDate ?? "",

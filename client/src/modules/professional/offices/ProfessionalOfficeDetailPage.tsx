@@ -15,10 +15,10 @@ import {
 	deleteProfessionalOffice,
 	getOfficeBlocks,
 	getProfessionalOffice,
-	getProfessionalPatients,
 	unblockOfficeBlock,
 	updateProfessionalOffice,
 } from "@/modules/professional/api/professional.api";
+import type { ProfessionalSelectablePatient } from "@/modules/professional/patients/ProfessionalPatientSelector";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { buildAgendaFromSchedules } from "@/services/api/mappers";
 import { queryKeys } from "@/shared/constants/query-keys";
@@ -31,7 +31,7 @@ import { AgendaDayPanel } from "@/shared/components/AgendaDayPanel";
 import { BookAppointmentModal } from "@/shared/components/BookAppointmentModal";
 import { ConfirmDialog } from "@/shared/components/ConfirmDialog";
 import { getAgendaForDate } from "@/shared/utils/agenda";
-import { formatNumericDate } from "@/shared/utils/date";
+import { formatNumericDate, isPastScheduleSlot } from "@/shared/utils/date";
 import type { ApiOffice, ApiOfficeBlock, ApiSchedule } from "@/shared/types/api";
 
 function getToday() {
@@ -267,15 +267,6 @@ export function ProfessionalOfficeDetailPage() {
 		},
 		enabled: Boolean(officeId),
 	});
-	const patientsQuery = useQuery({
-		queryKey: [
-			...queryKeys.professionalPatients,
-			officeQuery.data?.professionalId ?? "",
-			"office-detail",
-		],
-		queryFn: () => getProfessionalPatients(officeQuery.data?.professionalId ?? ""),
-		enabled: Boolean(officeQuery.data?.professionalId),
-	});
 	const blocksQuery = useQuery({
 		queryKey: [...queryKeys.professionalOfficeDetail(officeId), "blocks", displayMonth.getFullYear(), displayMonth.getMonth()],
 		queryFn: () =>
@@ -313,16 +304,18 @@ export function ProfessionalOfficeDetailPage() {
 		[blocksQuery.data, selectedDate],
 	);
 	const hasFullDayBlock = dayBlocks.some((block) => block.type === "full_day");
-	const patientOptions = useMemo(
-		() =>
-			(patientsQuery.data ?? []).map((patient) => ({
-				id: patient.id,
-				fullName: patient.fullName,
-				meta: patient.email ?? patient.phone ?? patient.document,
-			})),
-		[patientsQuery.data],
-	);
+	const preventPastScheduling = (slot: { time: string; officeId: string; officeName?: string }) => {
+		if (!isPastScheduleSlot(selectedDate, slot.time)) {
+			return false;
+		}
 
+		setCalendarFeedback({
+			tone: "error",
+			message: `Ese horario del ${formatNumericDate(selectedDate)} a las ${slot.time} ya paso y no se puede agendar.`,
+		});
+		setSlotToSchedule(null);
+		return true;
+	};
 	// ── Mutations ──
 
 	const invalidateAll = async () => {
@@ -333,23 +326,32 @@ export function ProfessionalOfficeDetailPage() {
 	};
 
 	const createAppointmentMutation = useMutation({
-		mutationFn: (patientId: string) => {
+		mutationFn: (patient: ProfessionalSelectablePatient) => {
 			if (!officeQuery.data || !slotToSchedule) throw new Error("No se pudo preparar el turno.");
+			if (isPastScheduleSlot(selectedDate, slotToSchedule.time)) {
+				throw new Error("No se pueden agendar turnos en horarios pasados.");
+			}
 			return createAppointment({
-				patientId,
+				patientId: patient.id,
 				officeId: slotToSchedule.officeId || officeQuery.data.id,
 				date: selectedDate,
 				time: slotToSchedule.time,
 			});
 		},
-		onSuccess: async () => {
+		onSuccess: async (_, patient) => {
 			await invalidateAll();
+			await queryClient.invalidateQueries({ queryKey: [...queryKeys.professionalPatients, professionalId] });
 			setCalendarFeedback({
 				tone: "success",
 				message: slotToSchedule
-					? `Turno creado para el ${formatNumericDate(selectedDate)} a las ${slotToSchedule.time}. Queda pendiente de confirmacion del paciente.`
-					: "Turno creado.",
+					? `${patient.isLinked ? "Turno creado" : "Turno creado y primer vinculo registrado"} para ${patient.fullName} el ${formatNumericDate(selectedDate)} a las ${slotToSchedule.time}. Queda pendiente de confirmacion del paciente.`
+					: patient.isLinked
+						? "Turno creado."
+						: `Turno creado y primer vinculo registrado para ${patient.fullName}.`,
 			});
+		},
+		onError: (error) => {
+			setCalendarFeedback({ tone: "error", message: error instanceof Error ? error.message : "No se pudo crear el turno." });
 		},
 	});
 
@@ -574,10 +576,10 @@ export function ProfessionalOfficeDetailPage() {
 
 	// ── Loading / Error ──
 
-	if (officeQuery.isLoading || appointmentsQuery.isLoading || patientsQuery.isLoading || blocksQuery.isLoading || !officeForm) {
+	if (officeQuery.isLoading || appointmentsQuery.isLoading || blocksQuery.isLoading || !officeForm) {
 		return <div className="centered-feedback">Cargando consultorio...</div>;
 	}
-	if (officeQuery.isError || appointmentsQuery.isError || patientsQuery.isError || blocksQuery.isError || !officeQuery.data || !appointmentsQuery.data) {
+	if (officeQuery.isError || appointmentsQuery.isError || blocksQuery.isError || !officeQuery.data || !appointmentsQuery.data) {
 		return <div className="centered-feedback">No pudimos cargar el consultorio.</div>;
 	}
 
@@ -626,7 +628,10 @@ export function ProfessionalOfficeDetailPage() {
 							title="Turnos del dia"
 							dateLabel={formatNumericDate(selectedDate)}
 							items={dayItems}
-							onSelectFreeSlot={(slot) => setSlotToSchedule(slot)}
+							onSelectFreeSlot={(slot) => {
+								if (preventPastScheduling(slot)) return;
+								setSlotToSchedule(slot);
+							}}
 							onCancelBookedSlot={(id) => setAppointmentToCancel(id)}
 							onCompleteBookedSlot={(id) => setAppointmentToComplete(id)}
 						/>
@@ -638,107 +643,111 @@ export function ProfessionalOfficeDetailPage() {
 			value: "config",
 			label: "Configuracion",
 			content: (
-				<div className="cards-grid office-config-grid">
-					<Card
-						title="Datos"
-						className="panel-separated card-fit"
-						action={
-							<div className="form-actions">
-								{editingData ? (
-									<>
-										<Button variant="ghost" onClick={() => { setEditingData(false); if (officeQuery.data) setOfficeForm(mapOfficeToForm(officeQuery.data)); setServerError(null); }}>Cancelar</Button>
-										<Button onClick={() => updateOfficeMutation.mutate("data")} disabled={updateOfficeMutation.isPending}>
-											{updateOfficeMutation.isPending ? "Guardando..." : "Guardar"}
-										</Button>
-									</>
-								) : (
-									<Button variant="ghost" onClick={() => setEditingData(true)}>Editar</Button>
-								)}
+				<div className="settings-layout">
+					<div className="settings-main-column">
+						<Card
+							title="Datos"
+							className="panel-separated"
+							action={
+								<div className="form-actions">
+									{editingData ? (
+										<>
+											<Button variant="ghost" onClick={() => { setEditingData(false); if (officeQuery.data) setOfficeForm(mapOfficeToForm(officeQuery.data)); setServerError(null); }}>Cancelar</Button>
+											<Button onClick={() => updateOfficeMutation.mutate("data")} disabled={updateOfficeMutation.isPending}>
+												{updateOfficeMutation.isPending ? "Guardando..." : "Guardar"}
+											</Button>
+										</>
+									) : (
+										<Button variant="ghost" onClick={() => setEditingData(true)}>Editar</Button>
+									)}
+								</div>
+							}
+						>
+							<div className="minimal-form">
+								<Input label="Nombre" value={officeForm.name} disabled={!editingData}
+									onChange={(e) => setOfficeForm((c) => c ? { ...c, name: e.target.value } : c)} />
+								<Input label="Ubicacion" value={officeForm.address} disabled={!editingData}
+									onChange={(e) => setOfficeForm((c) => c ? { ...c, address: e.target.value } : c)} />
+								<Input label="Telefono" value={officeForm.phone} disabled={!editingData}
+									onChange={(e) => setOfficeForm((c) => c ? { ...c, phone: e.target.value } : c)} />
+								{serverError ? <span className="field-error">{serverError}</span> : null}
 							</div>
-						}
-					>
-						<div className="minimal-form">
-							<Input label="Nombre" value={officeForm.name} disabled={!editingData}
-								onChange={(e) => setOfficeForm((c) => c ? { ...c, name: e.target.value } : c)} />
-							<Input label="Ubicacion" value={officeForm.address} disabled={!editingData}
-								onChange={(e) => setOfficeForm((c) => c ? { ...c, address: e.target.value } : c)} />
-							<Input label="Telefono" value={officeForm.phone} disabled={!editingData}
-								onChange={(e) => setOfficeForm((c) => c ? { ...c, phone: e.target.value } : c)} />
-							{serverError ? <span className="field-error">{serverError}</span> : null}
-						</div>
-					</Card>
+						</Card>
 
-					<Card
-						title="Dias, horarios y turnos"
-						className="panel-separated office-rules-card"
-						action={
-							<div className="form-actions">
-								{editingRules ? (
-									<>
-										<Button variant="ghost" onClick={() => { setEditingRules(false); if (officeQuery.data) setOfficeForm(mapOfficeToForm(officeQuery.data)); setServerError(null); }}>Cancelar</Button>
-										<Button onClick={() => updateOfficeMutation.mutate("rules")} disabled={updateOfficeMutation.isPending}>
-											{updateOfficeMutation.isPending ? "Guardando..." : "Guardar"}
-										</Button>
-									</>
-								) : (
-									<Button variant="ghost" onClick={() => setEditingRules(true)}>Editar</Button>
-								)}
-							</div>
-						}
-					>
-						<div className="stack-md office-rules-scroll">
-							<div className="checkbox-grid">
-								{weekdayOptions.map((day) => (
-									<label key={day.value} className="checkbox-chip">
-										<input type="checkbox" checked={hasDay(day.value)} disabled={!editingRules} onChange={() => toggleDay(day.value)} />
-										<span>{day.label}</span>
-									</label>
-								))}
-							</div>
-							<div className="rules-stack">
-								{officeForm.scheduleDays.map((day) => (
-									<div key={day.dayOfWeek} className="day-rule-card">
-										<div className="day-rule-head">
-											<strong>{getWeekdayLabel(day.dayOfWeek)}</strong>
-											{editingRules ? (
-												<Button variant="ghost" className="button-inline" onClick={() => addSlot(day.dayOfWeek)}>Agregar horario</Button>
-											) : null}
-										</div>
-										<div className="day-rule-body">
-											{day.slots.map((slot, index) => (
-												<div key={slot.id} className="schedule-box">
-													<div className="schedule-row">
-														<Input label={`Horario ${index + 1}`} type="time" value={slot.startTime} disabled={!editingRules}
-															onChange={(e) => updateSlot(day.dayOfWeek, slot.id, "startTime", e.target.value)} />
-														<Input label="Hasta" type="time" value={slot.endTime} disabled={!editingRules}
-															onChange={(e) => updateSlot(day.dayOfWeek, slot.id, "endTime", e.target.value)} />
-														<Select label="Duracion" options={durationOptions} value={officeForm.appointmentDuration} disabled={!editingRules}
-															onChange={(e) => setOfficeForm((c) => c ? { ...c, appointmentDuration: e.target.value } : c)} />
-														<Button variant="danger" className="button-inline button-remove-slot" disabled={!editingRules} onClick={() => removeSlot(day.dayOfWeek, slot.id)}>Quitar horario</Button>
+						<Card
+							title="Dias, horarios y turnos"
+							className="panel-separated office-rules-card"
+							action={
+								<div className="form-actions">
+									{editingRules ? (
+										<>
+											<Button variant="ghost" onClick={() => { setEditingRules(false); if (officeQuery.data) setOfficeForm(mapOfficeToForm(officeQuery.data)); setServerError(null); }}>Cancelar</Button>
+											<Button onClick={() => updateOfficeMutation.mutate("rules")} disabled={updateOfficeMutation.isPending}>
+												{updateOfficeMutation.isPending ? "Guardando..." : "Guardar"}
+											</Button>
+										</>
+									) : (
+										<Button variant="ghost" onClick={() => setEditingRules(true)}>Editar</Button>
+									)}
+								</div>
+							}
+						>
+							<div className="stack-md office-rules-scroll">
+								<div className="checkbox-grid">
+									{weekdayOptions.map((day) => (
+										<label key={day.value} className="checkbox-chip">
+											<input type="checkbox" checked={hasDay(day.value)} disabled={!editingRules} onChange={() => toggleDay(day.value)} />
+											<span>{day.label}</span>
+										</label>
+									))}
+								</div>
+								<div className="rules-stack">
+									{officeForm.scheduleDays.map((day) => (
+										<div key={day.dayOfWeek} className="day-rule-card">
+											<div className="day-rule-head">
+												<strong>{getWeekdayLabel(day.dayOfWeek)}</strong>
+												{editingRules ? (
+													<Button variant="ghost" className="button-inline" onClick={() => addSlot(day.dayOfWeek)}>Agregar horario</Button>
+												) : null}
+											</div>
+											<div className="day-rule-body">
+												{day.slots.map((slot, index) => (
+													<div key={slot.id} className="schedule-box">
+														<div className="schedule-row">
+															<Input label={`Horario ${index + 1}`} type="time" value={slot.startTime} disabled={!editingRules}
+																onChange={(e) => updateSlot(day.dayOfWeek, slot.id, "startTime", e.target.value)} />
+															<Input label="Hasta" type="time" value={slot.endTime} disabled={!editingRules}
+																onChange={(e) => updateSlot(day.dayOfWeek, slot.id, "endTime", e.target.value)} />
+															<Select label="Duracion" options={durationOptions} value={officeForm.appointmentDuration} disabled={!editingRules}
+																onChange={(e) => setOfficeForm((c) => c ? { ...c, appointmentDuration: e.target.value } : c)} />
+															<Button variant="danger" className="button-inline button-remove-slot" disabled={!editingRules} onClick={() => removeSlot(day.dayOfWeek, slot.id)}>Quitar horario</Button>
+														</div>
 													</div>
-												</div>
-											))}
+												))}
+											</div>
 										</div>
-									</div>
-								))}
-								{!officeForm.scheduleDays.length ? (
-									<span className="meta">Este consultorio todavia no tiene horarios configurados.</span>
-								) : null}
+									))}
+									{!officeForm.scheduleDays.length ? (
+										<span className="meta">Este consultorio todavia no tiene horarios configurados.</span>
+									) : null}
+								</div>
+								{serverError ? <span className="field-error">{serverError}</span> : null}
 							</div>
-							{serverError ? <span className="field-error">{serverError}</span> : null}
-						</div>
-					</Card>
+						</Card>
+					</div>
 
-					<Card title="Zona de peligro" className="panel-separated card-fit">
-						<div className="stack-md">
-							<p className="meta">
-								Eliminar el consultorio borra todos sus horarios, turnos y bloqueos asociados. Esta accion no se puede deshacer.
-							</p>
-							<Button variant="danger" fullWidth onClick={() => setIsDeleteOfficeOpen(true)}>
-								Eliminar consultorio
-							</Button>
-						</div>
-					</Card>
+					<aside className="settings-side-column">
+						<Card title="Zona de peligro" className="panel-separated settings-action-card">
+							<div className="stack-md">
+								<p className="meta">
+									Eliminar el consultorio borra todos sus horarios, turnos y bloqueos asociados. Esta accion no se puede deshacer.
+								</p>
+								<Button variant="danger" fullWidth onClick={() => setIsDeleteOfficeOpen(true)}>
+									Eliminar consultorio
+								</Button>
+							</div>
+						</Card>
+					</aside>
 				</div>
 			),
 		},
@@ -835,12 +844,17 @@ export function ProfessionalOfficeDetailPage() {
 
 			<BookAppointmentModal
 				isOpen={Boolean(slotToSchedule)}
+				professionalId={professionalId}
 				title="Agendar paciente"
 				description={slotToSchedule ? `Horario seleccionado ${selectedDate} ${slotToSchedule.time}` : undefined}
-				patients={patientOptions}
+				newPatientMessage="Si eliges un paciente nuevo, el turno tambien va a crear el primer vinculo con este consultorio."
 				isSubmitting={createAppointmentMutation.isPending}
 				onClose={() => setSlotToSchedule(null)}
-				onConfirm={async (patientId) => { await createAppointmentMutation.mutateAsync(patientId); setSlotToSchedule(null); }}
+				onConfirm={async (patient) => {
+					if (!slotToSchedule || preventPastScheduling(slotToSchedule)) return;
+					await createAppointmentMutation.mutateAsync(patient);
+					setSlotToSchedule(null);
+				}}
 			/>
 
 			<ConfirmDialog

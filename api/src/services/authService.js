@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { User, Patient, Professional, RefreshToken } from '../database/models/index.js';
@@ -6,6 +7,10 @@ import { jwtConfig } from '../config/jwt.js';
 import emailService from './emailService.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../utils/logger.js';
+import csrfService from './csrfService.js';
+
+const FALLBACK_PASSWORD_HASH =
+	'$2a$12$C6UzMDM.H6dfI/f/IKcEe.FT4G4M0L1C0M6E7mP5B6tQJ1h1uJY6S';
 
 class AuthService {
 	// =========================================================================
@@ -55,6 +60,7 @@ class AuthService {
 
 		res.cookie('token', accessToken, jwtConfig.accessCookieOptions);
 		res.cookie('refresh_token', refreshToken, jwtConfig.refreshCookieOptions);
+		csrfService.issueCookie(res);
 
 		return { accessToken, refreshToken };
 	}
@@ -63,8 +69,19 @@ class AuthService {
 	 * Limpia ambas cookies de auth.
 	 */
 	clearAuthCookies(res) {
-		res.clearCookie('token', { path: '/' });
-		res.clearCookie('refresh_token', { path: '/api/auth' });
+		res.clearCookie('token', {
+			path: '/',
+			...(jwtConfig.accessCookieOptions.domain ? { domain: jwtConfig.accessCookieOptions.domain } : {}),
+		});
+		res.clearCookie('refresh_token', {
+			path: '/api/auth',
+			...(jwtConfig.refreshCookieOptions.domain ? { domain: jwtConfig.refreshCookieOptions.domain } : {}),
+		});
+		csrfService.clearCookie(res);
+	}
+
+	issueCsrfCookie(res) {
+		return csrfService.issueCookie(res);
 	}
 
 	// =========================================================================
@@ -133,6 +150,10 @@ class AuthService {
 	// LOGIN
 	// =========================================================================
 
+	async compareAgainstFallbackPassword(password) {
+		await bcrypt.compare(String(password || ''), FALLBACK_PASSWORD_HASH);
+	}
+
 	async login(email, password) {
 		const user = await User.findOne({
 			where: { email },
@@ -143,11 +164,25 @@ class AuthService {
 		});
 
 		if (!user || !user.isActive) {
+			await this.compareAgainstFallbackPassword(password);
+			logger.warn({
+				type: 'security',
+				event: 'login_failed',
+				email,
+				reason: 'user_missing_or_inactive',
+			});
 			throw new ApiError(401, 'Credenciales incorrectas.');
 		}
 
 		const isPasswordValid = await user.comparePassword(password);
 		if (!isPasswordValid) {
+			logger.warn({
+				type: 'security',
+				event: 'login_failed',
+				email,
+				userId: user.id,
+				reason: 'invalid_password',
+			});
 			throw new ApiError(401, 'Credenciales incorrectas.');
 		}
 
@@ -275,7 +310,11 @@ class AuthService {
 		const user = await User.findOne({ where: { email } });
 
 		if (!user) {
-			logger.info(`Intento de reseteo de password para email no existente: ${email}`);
+			logger.warn({
+				type: 'security',
+				event: 'password_reset_requested_for_unknown_email',
+				email,
+			});
 			return {
 				message: 'Si el email existe, recibirás un enlace de reseteo.',
 			};
@@ -305,8 +344,9 @@ class AuthService {
 	}
 
 	async resetPassword(token, newPassword) {
+		const tokenHash = PasswordResetToken.hashToken(token);
 		const resetToken = await PasswordResetToken.findOne({
-			where: { token, used: false },
+			where: { token: tokenHash, used: false },
 		});
 
 		if (!resetToken) {

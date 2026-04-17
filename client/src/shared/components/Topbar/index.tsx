@@ -17,7 +17,7 @@ export function Topbar({ contextLabel }: TopbarProps) {
       </div>
 
       <div className="row">
-        <Button variant="ghost" onClick={logout}>
+        <Button variant="ghost" onClick={logout} data-testid="topbar-logout">
           <LogOut size={16} />
           Salir
         </Button>

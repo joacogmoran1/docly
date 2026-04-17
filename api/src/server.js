@@ -1,113 +1,99 @@
-// src/server.js
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
-import morgan from 'morgan';
-import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
-
+import app from './app.js';
 import sequelize from './config/database.js';
-import routes from './routes/index.js';
-import errorHandler from './middleware/errorHandler.js';
-import { apiLimiter } from './middleware/rateLimiter.js';
+import env from './config/env.js';
 import logger from './utils/logger.js';
-import ApiError from './utils/ApiError.js';
+import emailService from './services/emailService.js';
+import maintenanceService from './services/maintenanceService.js';
+import {
+	shutdownRateLimitStores,
+	warmUpRateLimitStores,
+} from './middleware/stores/rateLimitStoreFactory.js';
 
-// Importar modelos y asociaciones
-import './database/models/index.js';
+const PORT = env.port;
 
-dotenv.config();
+let server;
 
-const app = express();
-const PORT = process.env.PORT || 4000;
+async function startServer() {
+	try {
+		await sequelize.authenticate();
+		await warmUpRateLimitStores();
+		await emailService.assertProductionReadiness();
+		maintenanceService.start();
+		app.locals.isReady = true;
+		logger.info({ message: 'Base de datos conectada correctamente.' });
 
-// ============================================================================
-// MIDDLEWARES DE SEGURIDAD
-// ============================================================================
-
-// Helmet - Headers de seguridad
-app.use(helmet());
-
-// CORS - Configuración estricta
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-    credentials: true, // 🔒 IMPORTANTE: Permite enviar cookies
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
-
-// Rate limiting global
-app.use('/api', apiLimiter);
-
-// Body parsers
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Cookie parser - 🔒 IMPORTANTE para leer httpOnly cookies
-app.use(cookieParser());
-
-// Logger HTTP
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
+		server = app.listen(PORT, () => {
+			logger.info({
+				message: 'Servidor iniciado.',
+				port: PORT,
+				nodeEnv: env.nodeEnv,
+				allowedOrigins: env.cors.allowedOrigins,
+			});
+		});
+	} catch (error) {
+		maintenanceService.stop();
+		await shutdownRateLimitStores().catch(() => {});
+		logger.error({ message: 'Error al iniciar el servidor.', error });
+		process.exit(1);
+	}
 }
 
-// ============================================================================
-// RUTAS
-// ============================================================================
+async function shutdown(signal) {
+	if (app.locals.isShuttingDown) {
+		return;
+	}
 
-app.use('/api', routes);
+	app.locals.isShuttingDown = true;
+	app.locals.isReady = false;
 
-// Ruta no encontrada
-app.all('*', (req, res, next) => {
-  next(new ApiError(404, `No se encontró la ruta: ${req.originalUrl}`));
+	logger.warn({ message: `Recibida señal ${signal}. Cerrando servidor...` });
+
+	const forceExitTimer = setTimeout(() => {
+		logger.error({ message: 'Cierre forzado por timeout.' });
+		process.exit(1);
+	}, 10000);
+	forceExitTimer.unref();
+
+	try {
+		if (server) {
+			await new Promise((resolve, reject) => {
+				server.close((error) => {
+					if (error) {
+						return reject(error);
+					}
+					return resolve();
+				});
+			});
+		}
+
+		maintenanceService.stop();
+		await shutdownRateLimitStores();
+		await sequelize.close();
+		logger.info({ message: 'Servidor detenido correctamente.' });
+		process.exit(0);
+	} catch (error) {
+		maintenanceService.stop();
+		logger.error({ message: 'Error al cerrar el servidor.', error });
+		process.exit(1);
+	}
+}
+
+process.on('SIGTERM', () => {
+	void shutdown('SIGTERM');
 });
 
-// Manejador de errores global
-app.use(errorHandler);
-
-// ============================================================================
-// INICIALIZACIÓN DEL SERVIDOR
-// ============================================================================
-
-const startServer = async () => {
-  try {
-    // Conectar a la base de datos
-    await sequelize.authenticate();
-    logger.info('✅ Conexión a la base de datos exitosa');
-
-    // Sincronizar modelos (solo en desarrollo)
-    if (process.env.NODE_ENV === 'development') {
-      await sequelize.sync({ alter: true });
-      logger.info('✅ Modelos sincronizados');
-    }
-
-    // Iniciar servidor
-    app.listen(PORT, () => {
-      logger.info(`🚀 Servidor corriendo en puerto ${PORT}`);
-      logger.info(`📍 Entorno: ${process.env.NODE_ENV || 'development'}`);
-      logger.info(`🔒 CORS habilitado para: ${process.env.FRONTEND_URL}`);
-    });
-  } catch (error) {
-    logger.error('❌ Error al iniciar el servidor:', error);
-    process.exit(1);
-  }
-};
-
-// Manejar errores no capturados
-process.on('unhandledRejection', (err) => {
-  logger.error('UNHANDLED REJECTION! 💥 Apagando servidor...');
-  logger.error(err);
-  process.exit(1);
+process.on('SIGINT', () => {
+	void shutdown('SIGINT');
 });
 
-process.on('uncaughtException', (err) => {
-  logger.error('UNCAUGHT EXCEPTION! 💥 Apagando servidor...');
-  logger.error(err);
-  process.exit(1);
+process.on('unhandledRejection', (error) => {
+	logger.error({ message: 'UNHANDLED REJECTION. Apagando servidor...', error });
+	void shutdown('unhandledRejection');
 });
 
-startServer();
+process.on('uncaughtException', (error) => {
+	logger.error({ message: 'UNCAUGHT EXCEPTION. Apagando servidor...', error });
+	void shutdown('uncaughtException');
+});
+
+void startServer();
