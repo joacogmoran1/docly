@@ -5,7 +5,7 @@ import catchAsync from '../utils/catchAsync.js';
 import ApiError from '../utils/ApiError.js';
 
 // =========================================================================
-// CREAR (solo profesionales - professionalId de sesion, no del body)
+// CREAR (solo profesionales - professionalId de sesion, no del body).
 // =========================================================================
 
 export const create = catchAsync(async (req, res) => {
