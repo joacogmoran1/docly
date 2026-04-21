@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-import app from '../src/app.js';
+import app from '../../.claude/worktrees/recursing-poitras-c0578f/api/src/app.js';
 
 export class CookieJar {
 	constructor() {

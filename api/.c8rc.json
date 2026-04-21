@@ -1,0 +1,26 @@
+{
+  "all": true,
+  "src": [
+    "src"
+  ],
+  "report-dir": "./coverage",
+  "reporter": [
+    "text",
+    "json-summary",
+    "html",
+    "lcov"
+  ],
+  "exclude": [
+    "test/**",
+    "test-support/**",
+    "scripts/**",
+    "src/database/migrate.js",
+    "src/database/rollback.js",
+    "src/database/seed.js"
+  ],
+  "check-coverage": true,
+  "lines": 60,
+  "functions": 50,
+  "branches": 65,
+  "statements": 60
+}

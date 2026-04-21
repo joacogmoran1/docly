@@ -1,5 +1,5 @@
 import { Sequelize } from 'sequelize';
-import env from './env.js';
+import env from '../../../.claude/worktrees/recursing-poitras-c0578f/api/src/config/env.js';
 
 const commonOptions = {
 	dialect: 'postgres',

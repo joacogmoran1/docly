@@ -1,5 +1,5 @@
 import env from '../../config/env.js';
-import { User, Patient, Professional } from '../models/index.js';
+import { User, Patient, Professional } from '../../../../.claude/worktrees/recursing-poitras-c0578f/api/src/database/models/index.js';
 
 export default {
 	async up({ transaction }) {
